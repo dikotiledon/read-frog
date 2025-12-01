@@ -3,6 +3,7 @@ import { semanticVersionSchema } from '@read-frog/definitions'
 import { z } from 'zod'
 import { logger } from './logger'
 import { sendMessage } from './message'
+import { READFROG_REMOTE_FEATURES_ENABLED } from './constants/feature-flags'
 
 const LAST_VIEWED_BLOG_DATE_KEY = 'lastViewedBlogDate'
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
@@ -69,12 +70,17 @@ export function hasNewBlogPost(
  * const freshPost = await getLatestBlogDate('http://localhost:8888/api/blog/latest', 'en', '1.10.0', false)
  * ```
  */
+export const BLOG_UPDATES_ENABLED = READFROG_REMOTE_FEATURES_ENABLED
+
 export async function getLatestBlogDate(
   apiUrl: string = 'https://readfrog.app/api/blog/latest',
   locale: string = 'en',
   extensionVersion?: string,
   useCache: boolean = true,
 ): Promise<{ date: Date, url: string, extensionVersion?: string | null } | null> {
+  if (!BLOG_UPDATES_ENABLED)
+    return null
+
   try {
     const url = new URL(apiUrl)
     url.searchParams.set('locale', locale)

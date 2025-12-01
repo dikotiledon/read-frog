@@ -6,7 +6,7 @@ import { Checkbox } from '@/components/shadcn/checkbox'
 import { Field, FieldLabel } from '@/components/shadcn/field'
 import { Input } from '@/components/shadcn/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/shadcn/select'
-import { READ_PROVIDER_MODELS } from '@/types/config/provider'
+import { READ_PROVIDER_MODELS, providerRequiresAPIKey } from '@/types/config/provider'
 import { readProviderConfigAtom, updateLLMProviderConfig } from '@/utils/atoms/provider'
 import { cn } from '@/utils/styles/tailwind'
 import { ConfigCard } from '../../components/config-card'
@@ -29,8 +29,8 @@ function ReadProviderSelectorField() {
   return (
     <Field>
       <FieldLabel htmlFor="readProvider">
-        {i18n.t('options.general.readConfig.provider')}
-        {!readProviderConfig.apiKey && <SetApiKeyWarning />}
+  {i18n.t('options.general.readConfig.provider')}
+  {providerRequiresAPIKey(readProviderConfig.provider) && !readProviderConfig.apiKey && <SetApiKeyWarning />}
       </FieldLabel>
       <ReadProviderSelector className="w-full" />
     </Field>

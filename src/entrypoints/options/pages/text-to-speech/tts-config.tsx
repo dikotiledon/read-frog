@@ -1,4 +1,5 @@
 import type { TTSModel, TTSVoice } from '@/types/config/tts'
+import { providerRequiresAPIKey } from '@/types/config/provider'
 import { i18n } from '#imports'
 import { IconLoader2, IconPlayerPlayFilled } from '@tabler/icons-react'
 import { useAtom, useAtomValue } from 'jotai'
@@ -62,8 +63,8 @@ function TtsProviderField() {
   return (
     <Field>
       <FieldLabel htmlFor="ttsProvider">
-        {i18n.t('options.tts.provider.label')}
-        {ttsProviderConfig && !ttsProviderConfig.apiKey && <SetApiKeyWarning />}
+  {i18n.t('options.tts.provider.label')}
+  {ttsProviderConfig && providerRequiresAPIKey(ttsProviderConfig.provider) && !ttsProviderConfig.apiKey && <SetApiKeyWarning />}
       </FieldLabel>
       <Select
         value={ttsConfig.providerId || undefined}

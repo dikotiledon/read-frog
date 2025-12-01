@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/shadcn/select'
-import { isAPIProviderConfig, isLLMTranslateProviderConfig, TRANSLATE_PROVIDER_MODELS } from '@/types/config/provider'
+import { isAPIProviderConfig, isLLMTranslateProviderConfig, TRANSLATE_PROVIDER_MODELS, providerRequiresAPIKey } from '@/types/config/provider'
 import { pageTranslateRangeSchema } from '@/types/config/translate'
 import { configFieldsAtomMap } from '@/utils/atoms/config'
 import { translateProviderConfigAtom, updateLLMProviderConfig } from '@/utils/atoms/provider'
@@ -78,7 +78,10 @@ function TranslateProviderSelectorField() {
   const translateProviderConfig = useAtomValue(translateProviderConfigAtom)
 
   // some deeplx providers don't need api key
-  const needSetAPIKey = translateProviderConfig && isAPIProviderConfig(translateProviderConfig) && translateProviderConfig.provider !== 'deeplx' && !translateProviderConfig.apiKey
+  const needSetAPIKey = translateProviderConfig
+    && isAPIProviderConfig(translateProviderConfig)
+    && providerRequiresAPIKey(translateProviderConfig.provider)
+    && !translateProviderConfig.apiKey
 
   return (
     <Field>

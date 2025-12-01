@@ -87,6 +87,7 @@ options:
           placeholder: Select a model
     providers:
       description:
+        genai: Samsung's internal GenAI portal that requires browser SSO login instead of API keys
         openai: Provides models like GPT-4o
         deepseek: Recommend to use in China
         openrouter: Unified interface for multiple LLM providers with pay-per-use pricing
@@ -116,6 +117,17 @@ options:
     testConnection:
       button: Test Connection
       testing: Testing...
+    genaiSession:
+      title: Samsung GenAI session
+      description: This provider reuses your Samsung SSO browser session instead of an API key.
+      refresh: Refresh session
+      refreshing: Opening Samsung GenAI to refresh your session...
+      ready: Samsung GenAI session is ready.
+      failed: Failed to refresh Samsung GenAI session.
+      openPortal: Open GenAI portal
+      openFailed: Could not open Samsung GenAI in a new tab.
+      lastChecked: Last checked $1
+      notChecked: Session has not been checked yet.
   general:
     title: General
     readConfig:

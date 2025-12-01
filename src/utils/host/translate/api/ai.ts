@@ -4,6 +4,8 @@ import { generateText } from 'ai'
 import { getProviderOptions } from '@/utils/constants/model'
 import { getTranslatePrompt } from '@/utils/prompts/translate'
 import { getTranslateModelById } from '@/utils/providers/model'
+import { isGenAIProviderConfig } from '@/types/config/provider'
+import { genaiTranslate } from '@/utils/genai/client'
 
 export async function aiTranslate(
   text: string,
@@ -11,6 +13,9 @@ export async function aiTranslate(
   providerConfig: LLMTranslateProviderConfig,
   options?: { isBatch?: boolean, content?: ArticleContent },
 ) {
+  if (isGenAIProviderConfig(providerConfig))
+    return await genaiTranslate(text, targetLangName, providerConfig, options)
+
   const { id: providerId, models: { translate } } = providerConfig
   const translateModel = translate.isCustomModel ? translate.customModel : translate.model
   const model = await getTranslateModelById(providerId)

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useTextToSpeech } from '@/hooks/use-text-to-speech'
 import {
+  isGenAIProviderConfig,
   isLLMTranslateProviderConfig,
   isNonAPIProvider,
   isPureAPIProvider,
@@ -20,6 +21,7 @@ import { getProviderOptions } from '@/utils/constants/model'
 import { getIsFirefoxExtensionEnv } from '@/utils/firefox/firefox-compat'
 import { createPortStreamPromise } from '@/utils/firefox/firefox-streaming'
 import { deeplxTranslate, googleTranslate, microsoftTranslate } from '@/utils/host/translate/api'
+import { genaiTranslate } from '@/utils/genai/client'
 import { translateText } from '@/utils/host/translate/translate-text'
 import { getTranslatePrompt } from '@/utils/prompts/translate'
 import { getTranslateModelById } from '@/utils/providers/model'
@@ -98,15 +100,22 @@ export function TranslatePopover() {
           `No provider config for ${config.translate.providerId} when translate text`,
         )
       }
-
-      const { provider } = translateProviderConfig
+    const { provider } = translateProviderConfig
+    const targetLangName = LANG_CODE_TO_EN_NAME[languageConfig.targetCode]
 
       setIsTranslating(true)
       cancelTranslation = undefined
 
       try {
+        if (isGenAIProviderConfig(translateProviderConfig)) {
+          const normalized = (await genaiTranslate(cleanText, targetLangName, translateProviderConfig)).trim()
+          if (isCancelled)
+            return
+          setTranslatedText(normalized === cleanText ? '' : normalized)
+          return
+        }
+
         if (isFirefoxExtensionEnv && isLLMTranslateProviderConfig(translateProviderConfig)) {
-          const targetLangName = LANG_CODE_TO_EN_NAME[languageConfig.targetCode]
           const {
             id: providerId,
             models: { translate },
@@ -194,7 +203,12 @@ export function TranslatePopover() {
           }
         }
         else if (isLLMTranslateProviderConfig(translateProviderConfig)) {
-          const targetLangName = LANG_CODE_TO_EN_NAME[languageConfig.targetCode]
+          if (isGenAIProviderConfig(translateProviderConfig)) {
+            const normalized = (await genaiTranslate(cleanText, targetLangName, translateProviderConfig)).trim()
+            if (!isCancelled)
+              setTranslatedText(normalized === cleanText ? '' : normalized)
+            return
+          }
           const {
             id: providerId,
             models: { translate },

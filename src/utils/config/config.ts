@@ -2,7 +2,7 @@ import type { Config } from '@/types/config/config'
 import type { ProvidersConfig } from '@/types/config/provider'
 import { storage } from '#imports'
 import { configSchema } from '@/types/config/config'
-import { isReadProviderConfig } from '@/types/config/provider'
+import { isReadProviderConfig, providerRequiresAPIKey } from '@/types/config/provider'
 import {
   CONFIG_STORAGE_KEY,
   DEFAULT_CONFIG,
@@ -26,9 +26,15 @@ export async function getConfigFromStorage() {
 export function isAnyAPIKeyForReadProviders(providersConfig: ProvidersConfig) {
   const readProvidersConfig = providersConfig.filter(isReadProviderConfig)
   return readProvidersConfig.some((providerConfig) => {
-    return providerConfig.apiKey
-  }) || readProvidersConfig.some((providerConfig) => {
-    return providerConfig.provider === 'ollama'
+    if (!providerConfig.enabled) {
+      return false
+    }
+
+    if (!providerRequiresAPIKey(providerConfig.provider)) {
+      return true
+    }
+
+    return Boolean(providerConfig.apiKey?.trim())
   })
 }
 

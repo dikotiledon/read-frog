@@ -16,7 +16,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/shadcn/sidebar'
-import { getLastViewedBlogDate, getLatestBlogDate, hasNewBlogPost, saveLastViewedBlogDate } from '@/utils/blog'
+import { BLOG_UPDATES_ENABLED, getLastViewedBlogDate, getLatestBlogDate, hasNewBlogPost, saveLastViewedBlogDate } from '@/utils/blog'
 import { WEBSITE_URL } from '@/utils/constants/url'
 import { cn } from '@/utils/styles/tailwind'
 import { getLastViewedSurvey, hasNewSurvey, saveLastViewedSurvey } from '@/utils/survey'
@@ -84,11 +84,13 @@ export function AppSidebar() {
   const { data: lastViewedDate } = useQuery({
     queryKey: ['last-viewed-blog-date'],
     queryFn: getLastViewedBlogDate,
+    enabled: BLOG_UPDATES_ENABLED,
   })
 
   const { data: latestBlogPost } = useQuery({
     queryKey: ['latest-blog-post'],
     queryFn: () => getLatestBlogDate(`${WEBSITE_URL}/api/blog/latest`, 'en', version),
+    enabled: BLOG_UPDATES_ENABLED,
   })
 
   const { data: lastViewedSurveyUrl } = useQuery({
@@ -111,7 +113,7 @@ export function AppSidebar() {
     }
   }
 
-  const showBlogIndicator = hasNewBlogPost(
+  const showBlogIndicator = BLOG_UPDATES_ENABLED && hasNewBlogPost(
     lastViewedDate ?? null,
     latestBlogPost?.date ?? null,
   )
@@ -126,8 +128,8 @@ export function AppSidebar() {
     'survey': showSurveyIndicator,
   }
 
-  const clickHandlerMap: Record<string, () => void> = {
-    'whats-new': handleWhatsNewClick,
+  const clickHandlerMap: Record<string, (() => void) | undefined> = {
+    'whats-new': BLOG_UPDATES_ENABLED ? handleWhatsNewClick : undefined,
     'survey': handleSurveyClick,
   }
 
@@ -162,7 +164,7 @@ export function AppSidebar() {
                 const handleClick = clickHandlerMap[key]
                 // Use the latest blog post URL for the "What's New" item
                 // Convert relative URL to absolute URL
-                const overrideUrl = key === 'whats-new' && latestBlogPost?.url
+                const overrideUrl = BLOG_UPDATES_ENABLED && key === 'whats-new' && latestBlogPost?.url
                   ? `${WEBSITE_URL}${latestBlogPost.url}`
                   : undefined
                 return renderNavItem(

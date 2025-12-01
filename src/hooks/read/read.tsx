@@ -1,5 +1,7 @@
 import type { Config } from '@/types/config/config'
 import type { ArticleAnalysis, ArticleExplanation, ExtractedContent } from '@/types/content'
+import type { ReadProviderConfig } from '@/types/config/provider'
+import type { z } from 'zod'
 import { i18n } from '#imports'
 import { LANG_CODE_TO_EN_NAME } from '@read-frog/definitions'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
@@ -8,6 +10,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { toast } from 'sonner'
 import { progressAtom, readStateAtom, store } from '@/entrypoints/side.content/atoms'
 import { articleAnalysisSchema, articleExplanationSchema } from '@/types/content'
+import { isGenAIProviderConfig, isReadProviderConfig } from '@/types/config/provider'
 import { sendInBatchesWithFixedDelay } from '@/utils/ai-request'
 import { configAtom, configFieldsAtomMap } from '@/utils/atoms/config'
 import { readProviderConfigAtom } from '@/utils/atoms/provider'
@@ -18,6 +21,7 @@ import { logger } from '@/utils/logger'
 import { getAnalyzePrompt } from '@/utils/prompts/analyze'
 import { getExplainPrompt } from '@/utils/prompts/explain'
 import { getReadModelById } from '@/utils/providers/model'
+import { genaiGenerateText } from '@/utils/genai/client'
 
 interface ExplainArticleParams {
   extractedContent: ExtractedContent
@@ -26,6 +30,46 @@ interface ExplainArticleParams {
 
 const MAX_ATTEMPTS = 3
 const MAX_CHARACTERS = 1000
+
+function extractJsonPayload(text: string) {
+  const trimmed = text.trim()
+  const start = trimmed.indexOf('{')
+  const end = trimmed.lastIndexOf('}')
+  if (start !== -1 && end !== -1 && end >= start)
+    return trimmed.slice(start, end + 1)
+  return trimmed
+}
+
+async function runReadProviderObjectCompletion<TSchema extends z.ZodTypeAny>(
+  providerConfig: ReadProviderConfig,
+  params: { system: string, prompt: string, schema: TSchema },
+): Promise<z.infer<TSchema>> {
+  if (isGenAIProviderConfig(providerConfig)) {
+    const response = await genaiGenerateText(
+      params.prompt,
+      providerConfig,
+      { system: params.system, modelType: 'read' },
+    )
+    const payload = extractJsonPayload(response)
+    try {
+      return params.schema.parse(JSON.parse(payload))
+    }
+    catch (error) {
+      logger.error('[GenAI] Failed to parse JSON response for read provider', { payload })
+      throw error
+    }
+  }
+
+  const model = await getReadModelById(providerConfig.id)
+  const { object } = await generateObject({
+    model,
+    system: params.system,
+    prompt: params.prompt,
+    schema: params.schema,
+  })
+
+  return params.schema.parse(object)
+}
 
 export function useAnalyzeContent() {
   const setReadState = useSetAtom(readStateAtom)
@@ -39,25 +83,30 @@ export function useAnalyzeContent() {
         throw new Error('No content available for summary generation')
       }
 
+      if (!readProviderConfig) {
+        throw new Error('Read provider configuration is missing')
+      }
+
       setReadState('analyzing')
       let attempts = 0
       const maxAttempts = 3
       let lastError
 
-      const model = await getReadModelById(readProviderConfig.id)
       const targetLang = LANG_CODE_TO_EN_NAME[language.targetCode]
 
       while (attempts < maxAttempts) {
         try {
-          const { object: articleAnalysis } = await generateObject({
-            model,
-            system: getAnalyzePrompt(targetLang),
-            prompt: JSON.stringify({
-              originalTitle: extractedContent.article.title,
-              content: extractedContent.paragraphs.join('\n'),
-            }),
-            schema: articleAnalysisSchema,
-          })
+          const articleAnalysis = await runReadProviderObjectCompletion(
+            readProviderConfig,
+            {
+              system: getAnalyzePrompt(targetLang),
+              prompt: JSON.stringify({
+                originalTitle: extractedContent.article.title,
+                content: extractedContent.paragraphs.join('\n'),
+              }),
+              schema: articleAnalysisSchema,
+            },
+          )
 
           // TODO: if und, then UI need to show UI to ask user to select the language or not continue
           void setLanguage({
@@ -90,7 +139,7 @@ async function explainBatch(batch: string[], articleAnalysis: ArticleAnalysis, c
 
   const { language, read, providersConfig } = config
   const readProviderConfig = getProviderConfigById(providersConfig, read.providerId)
-  if (!readProviderConfig) {
+  if (!readProviderConfig || !isReadProviderConfig(readProviderConfig)) {
     throw new Error(`Provider ${read.providerId} not found`)
   }
 
@@ -98,18 +147,19 @@ async function explainBatch(batch: string[], articleAnalysis: ArticleAnalysis, c
   const sourceLang
     = LANG_CODE_TO_EN_NAME[getFinalSourceCode(language.sourceCode, language.detectedCode)]
 
-  const model = await getReadModelById(readProviderConfig.id)
   while (attempts < MAX_ATTEMPTS) {
     try {
-      const { object: articleExplanation } = await generateObject({
-        model,
-        system: getExplainPrompt(sourceLang, targetLang, language.level ?? 'intermediate'),
-        prompt: JSON.stringify({
-          overallSummary: articleAnalysis.summary,
-          paragraphs: batch,
-        }),
-        schema: articleExplanationSchema,
-      })
+      const articleExplanation = await runReadProviderObjectCompletion(
+        readProviderConfig,
+        {
+          system: getExplainPrompt(sourceLang, targetLang, language.level ?? 'intermediate'),
+          prompt: JSON.stringify({
+            overallSummary: articleAnalysis.summary,
+            paragraphs: batch,
+          }),
+          schema: articleExplanationSchema,
+        },
+      )
 
       store.set(progressAtom, prev => ({
         ...prev,

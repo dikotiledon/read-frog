@@ -3,21 +3,26 @@ import { Icon } from '@iconify/react/dist/iconify.js'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/shadcn/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/shadcn/tooltip'
-import { getLastViewedBlogDate, getLatestBlogDate, hasNewBlogPost, saveLastViewedBlogDate } from '@/utils/blog'
+import { BLOG_UPDATES_ENABLED, getLastViewedBlogDate, getLatestBlogDate, hasNewBlogPost, saveLastViewedBlogDate } from '@/utils/blog'
 import { WEBSITE_URL } from '@/utils/constants/url'
 import { version } from '../../../../package.json'
 
 export default function BlogNotification() {
+  if (!BLOG_UPDATES_ENABLED)
+    return null
+
   const queryClient = useQueryClient()
 
   const { data: lastViewedDate } = useQuery({
     queryKey: ['last-viewed-blog-date'],
     queryFn: getLastViewedBlogDate,
+    enabled: BLOG_UPDATES_ENABLED,
   })
 
   const { data: latestBlogPost } = useQuery({
     queryKey: ['latest-blog-post'],
     queryFn: () => getLatestBlogDate(`${WEBSITE_URL}/api/blog/latest`, 'en', version),
+    enabled: BLOG_UPDATES_ENABLED,
   })
 
   const handleClick = async () => {

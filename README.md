@@ -123,6 +123,23 @@ Join our growing community of language learners and help shape the future of Rea
 
 </div>
 
+## Samsung GenAI (SSO-only)
+
+Need to use Samsung's internal GenAI portal? Read Frog already ships with a disabled-by-default provider preset:
+
+1. Open **Options → API Providers**, enable **Samsung GenAI**, and set it as the default Read/Translate provider as needed.
+2. No API key is required. Instead, stay logged into <https://genai.sec.samsung.net> inside the same browser profile that runs the extension.
+3. When Read Frog notices your GenAI session has expired, it automatically opens a new tab pointing to Samsung's SSO page, waits for the login to finish, reuses the refreshed cookies, and closes the tab.
+4. For a detailed step-by-step walkthrough of the SSO redirects (useful for QA or troubleshooting), see [`manual run in browser.txt`](./manual%20run%20in%20browser.txt).
+
+> **Tip:** you can manually visit <https://genai.sec.samsung.net/api/account/auth/session>—if it returns user metadata, the session is warm and Read Frog can start translating immediately.
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
 ## 🤝 Contribute
 
 Contributions of all types are more than welcome.

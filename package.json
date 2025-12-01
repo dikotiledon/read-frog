@@ -90,6 +90,7 @@
     "deepmerge-ts": "^7.1.5",
     "dequal": "^2.0.3",
     "dexie": "^4.0.11",
+    "eventsource-parser": "^3.0.6",
     "file-saver": "^2.0.5",
     "franc-min": "^6.2.0",
     "hotkeys-js": "^3.13.10",

@@ -5,12 +5,13 @@ import { generateText } from 'ai'
 import { franc } from 'franc-min'
 import z from 'zod'
 import { flattenToParagraphs } from '@/entrypoints/side.content/utils/article'
-import { isLLMTranslateProviderConfig } from '@/types/config/provider'
+import { isGenAIProviderConfig, isLLMTranslateProviderConfig } from '@/types/config/provider'
 import { getConfigFromStorage } from '../config/config'
 import { getProviderConfigById } from '../config/helpers'
 import { getProviderOptions } from '../constants/model'
 import { logger } from '../logger'
 import { getTranslateModelById } from '../providers/model'
+import { genaiGenerateText } from '../genai/client'
 import { cleanText, removeDummyNodes } from './utils'
 
 export type DetectionSource = 'llm' | 'franc' | 'fallback'
@@ -120,11 +121,6 @@ export async function detectLanguageWithLLM(
       return null
     }
 
-    const { models: { translate } } = providerConfig
-    const translateModel = translate.isCustomModel ? translate.customModel : translate.model
-    const providerOptions = getProviderOptions(translateModel ?? '')
-    const model = await getTranslateModelById(providerConfig.id)
-
     // Create language list for prompt
     const languageList = Object.entries(LANG_CODE_TO_EN_NAME)
       .map(([code, name]) => `- ${code}: ${name}`)
@@ -144,13 +140,32 @@ ${text}
 
 Remember: Return ONLY the ISO 639-3 code (3 lowercase letters or "und").`
 
+    const isGenAI = isGenAIProviderConfig(providerConfig)
+    let providerOptions: ReturnType<typeof getProviderOptions> | undefined
+    let model: Awaited<ReturnType<typeof getTranslateModelById>> | undefined
+
+    if (!isGenAI) {
+      const { models: { translate } } = providerConfig
+      const translateModel = translate.isCustomModel ? translate.customModel : translate.model
+      providerOptions = getProviderOptions(translateModel ?? '')
+      model = await getTranslateModelById(providerConfig.id)
+    }
+
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        const { text: responseText } = await generateText({
-          model,
-          prompt,
-          providerOptions,
-        })
+        let responseText = ''
+
+        if (isGenAI) {
+          responseText = await genaiGenerateText(prompt, providerConfig, { modelType: 'translate' })
+        }
+        else {
+          const result = await generateText({
+            model: model!,
+            prompt,
+            providerOptions,
+          })
+          responseText = result.text
+        }
 
         // Clean the response (trim whitespace, quotes, newlines)
         const cleanedCode = responseText.trim().toLowerCase().replace(/['"`,.\s]/g, '')

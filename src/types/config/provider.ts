@@ -3,6 +3,7 @@ import { z } from 'zod'
   Single source of truth
   ────────────────────────────── */
 export const READ_PROVIDER_MODELS = {
+  genai: ['gauss-flash'],
   openai: ['gpt-5-mini', 'gpt-4.1-mini', 'gpt-4o-mini', 'gpt-5', 'gpt-4.1', 'gpt-4o'],
   deepseek: ['deepseek-chat'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
@@ -27,6 +28,7 @@ export const READ_PROVIDER_MODELS = {
   ollama: ['gemma3:27b', 'deepseek-v3'],
 } as const
 export const TRANSLATE_PROVIDER_MODELS = {
+  genai: ['gauss-flash'],
   openai: ['gpt-5-mini', 'gpt-4.1-mini', 'gpt-4o-mini', 'gpt-5-nano', 'gpt-4.1-nano', 'gpt-5', 'gpt-4.1', 'gpt-4o'],
   deepseek: ['deepseek-chat'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash-exp'],
@@ -64,7 +66,7 @@ export const THINKING_MODELS = ['gemini-2.5-pro'] as const
   ────────────────────────────── */
 
 // read provider names
-export const READ_PROVIDER_TYPES = ['openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'openaiCompatible', 'siliconflow', 'tensdaq', 'ai302', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
+export const READ_PROVIDER_TYPES = ['genai', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'openaiCompatible', 'siliconflow', 'tensdaq', 'ai302', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
   (keyof typeof READ_PROVIDER_MODELS)[]
 >
 export type ReadProviderTypes = typeof READ_PROVIDER_TYPES[number]
@@ -76,7 +78,7 @@ export function isReadProviderConfig(config: ProviderConfig): config is ReadProv
 }
 
 // translate provider names
-export const TRANSLATE_PROVIDER_TYPES = ['google', 'microsoft', 'deeplx', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'openaiCompatible', 'siliconflow', 'tensdaq', 'ai302', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
+export const TRANSLATE_PROVIDER_TYPES = ['google', 'microsoft', 'deeplx', 'genai', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'openaiCompatible', 'siliconflow', 'tensdaq', 'ai302', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
   (keyof typeof TRANSLATE_PROVIDER_MODELS | typeof PURE_TRANSLATE_PROVIDERS[number])[]
 >
 export type TranslateProviderTypes = typeof TRANSLATE_PROVIDER_TYPES[number]
@@ -88,7 +90,7 @@ export function isTranslateProviderConfig(config: ProviderConfig): config is Tra
 }
 
 // translate provider names that support LLM
-export const LLM_TRANSLATE_PROVIDER_TYPES = ['openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'openaiCompatible', 'siliconflow', 'tensdaq', 'ai302', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
+export const LLM_TRANSLATE_PROVIDER_TYPES = ['genai', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'openaiCompatible', 'siliconflow', 'tensdaq', 'ai302', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
   (keyof typeof TRANSLATE_PROVIDER_MODELS)[]
 >
 export type LLMTranslateProviderTypes = typeof LLM_TRANSLATE_PROVIDER_TYPES[number]
@@ -99,7 +101,7 @@ export function isLLMTranslateProviderConfig(config: ProviderConfig): config is 
   return isLLMTranslateProvider(config.provider)
 }
 
-export const LLM_PROVIDER_TYPES = ['openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'openaiCompatible', 'siliconflow', 'tensdaq', 'ai302', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
+export const LLM_PROVIDER_TYPES = ['genai', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'openaiCompatible', 'siliconflow', 'tensdaq', 'ai302', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
   (keyof typeof READ_PROVIDER_MODELS | keyof typeof TRANSLATE_PROVIDER_MODELS)[]
 >
 export type LLMProviderTypes = typeof LLM_PROVIDER_TYPES[number]
@@ -121,7 +123,7 @@ export function isCustomLLMProviderConfig(config: ProviderConfig): config is Cus
   return isCustomLLMProvider(config.provider)
 }
 
-export const NON_CUSTOM_LLM_PROVIDER_TYPES = ['openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
+export const NON_CUSTOM_LLM_PROVIDER_TYPES = ['genai', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
   Exclude<keyof typeof READ_PROVIDER_MODELS | keyof typeof TRANSLATE_PROVIDER_MODELS, CustomLLMProviderTypes>[]
 >
 export type NonCustomLLMProviderTypes = typeof NON_CUSTOM_LLM_PROVIDER_TYPES[number]
@@ -132,7 +134,7 @@ export function isNonCustomLLMProviderConfig(config: ProviderConfig): config is 
   return isNonCustomLLMProvider(config.provider)
 }
 
-export const API_PROVIDER_TYPES = ['siliconflow', 'tensdaq', 'ai302', 'openaiCompatible', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'deeplx', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
+export const API_PROVIDER_TYPES = ['siliconflow', 'tensdaq', 'ai302', 'openaiCompatible', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'deeplx', 'genai', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
   (keyof typeof READ_PROVIDER_MODELS | keyof typeof TRANSLATE_PROVIDER_MODELS | 'deeplx')[]
 >
 export type APIProviderTypes = typeof API_PROVIDER_TYPES[number]
@@ -152,6 +154,15 @@ export function isPureAPIProvider(provider: string): provider is PureAPIProvider
 }
 export function isPureAPIProviderConfig(config: ProviderConfig): config is PureAPIProviderConfig {
   return isPureAPIProvider(config.provider)
+}
+
+export const OPTIONAL_API_KEY_PROVIDER_TYPES = ['deeplx', 'ollama', 'genai'] as const satisfies Readonly<APIProviderTypes[]>
+export type OptionalAPIKeyProviderTypes = typeof OPTIONAL_API_KEY_PROVIDER_TYPES[number]
+export function isOptionalAPIKeyProvider(provider: string): provider is OptionalAPIKeyProviderTypes {
+  return OPTIONAL_API_KEY_PROVIDER_TYPES.includes(provider as OptionalAPIKeyProviderTypes)
+}
+export function providerRequiresAPIKey(provider: string): boolean {
+  return isAPIProvider(provider) && !isOptionalAPIKeyProvider(provider)
 }
 
 export type NonAPIProviderTypes = typeof NON_API_TRANSLATE_PROVIDERS[number]
@@ -174,7 +185,7 @@ export function isTTSProviderConfig(config: ProviderConfig): config is TTSProvid
 }
 
 // all provider names
-export const ALL_PROVIDER_TYPES = ['google', 'microsoft', 'deeplx', 'siliconflow', 'tensdaq', 'ai302', 'openaiCompatible', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
+export const ALL_PROVIDER_TYPES = ['google', 'microsoft', 'deeplx', 'genai', 'siliconflow', 'tensdaq', 'ai302', 'openaiCompatible', 'openai', 'deepseek', 'gemini', 'anthropic', 'grok', 'amazonBedrock', 'groq', 'deepinfra', 'mistral', 'togetherai', 'cohere', 'fireworks', 'cerebras', 'replicate', 'perplexity', 'vercel', 'openrouter', 'ollama'] as const satisfies Readonly<
   (typeof READ_PROVIDER_TYPES[number] | typeof TRANSLATE_PROVIDER_TYPES[number])[]
 >
 export type AllProviderTypes = typeof ALL_PROVIDER_TYPES[number]
@@ -224,6 +235,10 @@ export const baseCustomLLMProviderConfigSchema = baseAPIProviderConfigSchema.ext
 })
 
 const llmProviderConfigSchemaList = [
+  baseAPIProviderConfigSchema.extend({
+    provider: z.literal('genai'),
+    models: createProviderModelsSchema<'genai'>('genai'),
+  }),
   baseCustomLLMProviderConfigSchema.extend({
     provider: z.literal('siliconflow'),
     models: createProviderModelsSchema<'siliconflow'>('siliconflow'),
@@ -381,11 +396,20 @@ export type APIProviderConfig = Extract<ProviderConfig, { provider: APIProviderT
 export type PureAPIProviderConfig = Extract<ProviderConfig, { provider: PureAPIProviderTypes }>
 export type LLMTranslateProviderConfig = Extract<ProviderConfig, { provider: LLMTranslateProviderTypes }>
 export type LLMProviderConfig = Extract<ProviderConfig, { provider: LLMProviderTypes }>
+export type GenAIProviderConfig = Extract<ProviderConfig, { provider: 'genai' }>
 export type TranslateProviderConfig = Extract<ProviderConfig, { provider: TranslateProviderTypes }>
 export type ReadProviderConfig = Extract<ProviderConfig, { provider: ReadProviderTypes }>
 export type NonCustomLLMProviderConfig = Extract<ProviderConfig, { provider: NonCustomLLMProviderTypes }>
 export type CustomLLMProviderConfig = Extract<ProviderConfig, { provider: CustomLLMProviderTypes }>
 export type TTSProviderConfig = Extract<ProviderConfig, { provider: TTSProviderTypes }>
+
+export function isGenAIProvider(provider: string): provider is 'genai' {
+  return provider === 'genai'
+}
+
+export function isGenAIProviderConfig(config: ProviderConfig): config is GenAIProviderConfig {
+  return config.provider === 'genai'
+}
 
 /* ──────────────────────────────
   read or translate config helpers

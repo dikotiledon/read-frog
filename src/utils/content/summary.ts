@@ -1,7 +1,9 @@
 import type { LLMTranslateProviderConfig } from '@/types/config/provider'
 import { generateText } from 'ai'
 import { getProviderOptions } from '@/utils/constants/model'
+import { isGenAIProviderConfig } from '@/types/config/provider'
 import { logger } from '@/utils/logger'
+import { genaiGenerateText } from '@/utils/genai/client'
 import { getTranslateModelById } from '@/utils/providers/model'
 import { cleanText } from './utils'
 
@@ -20,11 +22,6 @@ export async function generateArticleSummary(
   }
 
   try {
-    const { models: { translate } } = providerConfig
-    const translateModel = translate.isCustomModel ? translate.customModel : translate.model
-    const providerOptions = getProviderOptions(translateModel ?? '')
-    const model = await getTranslateModelById(providerConfig.id)
-
     const prompt = `Summarize the following article in 2-3 sentences. Focus on the main topic and key points. Return ONLY the summary, no explanations or formatting.
 
 Title: ${title}
@@ -32,11 +29,24 @@ Title: ${title}
 Content:
 ${preparedText}`
 
-    const { text: summary } = await generateText({
-      model,
-      prompt,
-      providerOptions,
-    })
+    let summary = ''
+
+    if (isGenAIProviderConfig(providerConfig)) {
+      summary = await genaiGenerateText(prompt, providerConfig, { modelType: 'translate' })
+    }
+    else {
+      const { models: { translate } } = providerConfig
+      const translateModel = translate.isCustomModel ? translate.customModel : translate.model
+      const providerOptions = getProviderOptions(translateModel ?? '')
+      const model = await getTranslateModelById(providerConfig.id)
+
+      const result = await generateText({
+        model,
+        prompt,
+        providerOptions,
+      })
+      summary = result.text
+    }
 
     const cleanedSummary = summary.trim()
     logger.info('Generated article summary:', `${cleanedSummary.slice(0, 100)}...`)

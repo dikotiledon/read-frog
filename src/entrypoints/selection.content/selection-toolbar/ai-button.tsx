@@ -8,12 +8,14 @@ import { Activity } from 'react'
 import { MarkdownRenderer } from '@/components/markdown-renderer'
 import { configAtom, configFieldsAtomMap } from '@/utils/atoms/config'
 import { readProviderConfigAtom } from '@/utils/atoms/provider'
+import { isGenAIProviderConfig } from '@/types/config/provider'
 import { getFinalSourceCode } from '@/utils/config/languages'
 import { getIsFirefoxExtensionEnv } from '@/utils/firefox/firefox-compat'
 import { createPortStreamPromise } from '@/utils/firefox/firefox-streaming'
 import { logger } from '@/utils/logger'
 import { getWordExplainPrompt } from '@/utils/prompts/word-explain'
 import { getReadModelById } from '@/utils/providers/model'
+import { genaiGenerateText } from '@/utils/genai/client'
 import { createHighlightData } from '../utils'
 import { isAiPopoverVisibleAtom, isSelectionToolbarVisibleAtom, mouseClickPositionAtom, selectionRangeAtom } from './atom'
 import { PopoverWrapper } from './components/popover-wrapper'
@@ -95,6 +97,20 @@ export function AiPopover() {
         const userMessage
           = `query: ${highlightData.context.selection}\n`
             + `context: ${highlightData.context.before} ${highlightData.context.selection} ${highlightData.context.after}`
+
+        if (isGenAIProviderConfig(readProviderConfig)) {
+          const response = await genaiGenerateText(
+            userMessage,
+            readProviderConfig,
+            { system: systemPrompt, modelType: 'read' },
+          )
+          if (!signal?.aborted) {
+            setAiResponse(response)
+            popoverRef.current?.scrollToBottom()
+          }
+          logger.log('aiResponse', '\n', response)
+          return true
+        }
 
         if (isFirefoxExtensionEnv) {
           const finalResponse = await createPortStreamPromise<string>(

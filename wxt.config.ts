@@ -26,10 +26,12 @@ export default defineConfig({
             'http://localhost:*/*', // For local backend (dev:local)
             'https://*.readfrog.app/*', // For prod backend (dev)
             'https://readfrog.app/*', // For prod backend (dev)
+            'https://genai.sec.samsung.net/*',
           ]
         : [
             'https://*.readfrog.app/*',
             'https://readfrog.app/*', // Include both www and non-www versions
+            'https://genai.sec.samsung.net/*',
           ],
     // Firefox-specific settings for MV3
     ...(browser === 'firefox' && {
@@ -43,6 +45,7 @@ export default defineConfig({
   }),
   dev: {
     server: {
+      host: '0.0.0.0',
       port: 3333,
     },
   },

@@ -1,4 +1,5 @@
 import type { APIProviderConfig } from '@/types/config/provider'
+import { providerRequiresAPIKey } from '@/types/config/provider'
 import { i18n } from '#imports'
 import { Icon } from '@iconify/react'
 import { useMutation } from '@tanstack/react-query'
@@ -39,6 +40,8 @@ const ConnectionTestResultIconMap = {
 export function ConnectionTestButton({ providerConfig }: { providerConfig: APIProviderConfig }) {
   const { apiKey, baseURL, provider } = providerConfig
 
+  const isApiKeyRequired = providerRequiresAPIKey(provider)
+
   const mutation = useMutation({
     // for safety, we should not include apiKey in the mutationKey
     mutationKey: ['apiConnection', getObjectWithoutAPIKeys(providerConfig)],
@@ -66,7 +69,7 @@ export function ConnectionTestButton({ providerConfig }: { providerConfig: APIPr
         size="sm"
         variant="outline"
         onClick={handleTestConnection}
-        disabled={mutation.isPending || (!apiKey && provider !== 'deeplx' && provider !== 'ollama')}
+        disabled={mutation.isPending || (!apiKey && isApiKeyRequired)}
         className="h-7 px-3"
       >
         {mutation.isPending

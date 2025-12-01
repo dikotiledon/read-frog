@@ -1,0 +1,700 @@
+Samsung GenAI can only be accessed through the browser session; it has no public API, so every test run must piggyback on the cookies stored in the logged-in profile. Follow this quick checklist before trying manual translation flows:
+
+1. Use the same Chrome/Edge profile you used to log in to https://genai.sec.samsung.net. The extension's background worker reuses that profile's cookies via `fetch(..., { credentials: 'include' })`.
+2. Visit https://genai.sec.samsung.net/api/account/auth/session in that profile. If it returns `{"statusCode":200}` you must log in again; a `200` plus user metadata means the session is warm and the background translator can call chat endpoints.
+3. If you are not logged in, open https://genai.sec.samsung.net (the tab can be closed once the login redirect finishes). The login flow below shows the expected 302/303 hops through Samsung's Keycloak/ADFS stack.
+4. Only after the session endpoint returns user info should you trigger Read Frog translations. The provider config intentionally leaves API-key fields blank because Samsung GenAI relies entirely on the browser session.
+
+⚠️ Samsung's session endpoint always returns `{"statusCode":200}`. A **valid** login response also includes a populated `data` object (id, name, email, permissions, etc.). The extension now treats `200` responses without `data` as unauthenticated and will reopen the GenAI tab until a full payload arrives.
+
+i want to use 
+https://genai.sec.samsung.net as provider, but they not provide API support so it must create manually
+
+first check session https://genai.sec.samsung.net/api/account/auth/session
+if response code only "statusCode": 200 then the user must log in first
+
+this is a flow when loginin in browser
+
+when i open https://genai.sec.samsung.net the network devtools show
+
+1. 
+Request URL
+https://genai.sec.samsung.net/
+Request Method
+GET
+Status Code
+302 Moved Temporarily
+Remote Address
+10.195.107.10:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 302 Moved Temporarily
+Date: Thu, 27 Nov 2025 02:58:49 GMT
+Content-Type: text/html
+Content-Length: 138
+Connection: keep-alive
+Location: https://genai.sec.samsung.net/api/account/auth/login?rd=https://genai.sec.samsung.net%2F
+
+GET / HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Host: genai.sec.samsung.net
+Pragma: no-cache
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: none
+Sec-Fetch-User: ?1
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0
+sec-ch-ua: "Not;A=Brand";v="99", "Microsoft Edge";v="139", "Chromium";v="139"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Linux"
+
+2.
+Request URL
+https://genai.sec.samsung.net/api/account/auth/login?rd=https://genai.sec.samsung.net%2F
+Request Method
+GET
+Status Code
+302 Found
+Remote Address
+10.195.107.10:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 302 Found
+Date: Thu, 27 Nov 2025 02:58:50 GMT
+Content-Length: 0
+Connection: keep-alive
+Set-Cookie: INGRESSCOOKIE=1764212331.095.1662.47196|106b6c0c4dcdde326b101801aa007c6b; Path=/; HttpOnly
+X-Powered-By: Express
+Set-Cookie: rd=https%3A%2F%2Fgenai.sec.samsung.net%2F; Path=/; HttpOnly; Secure
+Set-Cookie: connect.sid=s%3ALthPYMA5NWMCDMt5voXDQhz9iBtV0lZR.URrThyarel88YJyTdwCv4rptmuvlVOyDp0cyh%2BoyqwU; Domain=genai.sec.samsung.net; Path=/; HttpOnly; Secure; SameSite=None
+Location: https://genai.sec.samsung.net/iam-keycloak/realms/fabrix/protocol/openid-connect/auth?response_type=code&client_id=fabrix&redirect_uri=https%3A%2F%2Fgenai.sec.samsung.net%2Fapi%2Faccount%2Fauth%2Fcallback&scope=openid&state=Y0gpq2JtE7Tf14VE66qpcbpu
+
+GET /api/account/auth/login?rd=https://genai.sec.samsung.net%2F HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Host: genai.sec.samsung.net
+Pragma: no-cache
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: none
+Sec-Fetch-User: ?1
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0
+sec-ch-ua: "Not;A=Brand";v="99", "Microsoft Edge";v="139", "Chromium";v="139"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Linux"
+
+3.
+Request URL
+https://genai.sec.samsung.net/iam-keycloak/realms/fabrix/protocol/openid-connect/auth?response_type=code&client_id=fabrix&redirect_uri=https%3A%2F%2Fgenai.sec.samsung.net%2Fapi%2Faccount%2Fauth%2Fcallback&scope=openid&state=Y0gpq2JtE7Tf14VE66qpcbpu
+Request Method
+GET
+Status Code
+303 See Other
+Remote Address
+10.195.107.10:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 303 See Other
+Date: Thu, 27 Nov 2025 02:58:50 GMT
+Content-Length: 0
+Connection: keep-alive
+Set-Cookie: AUTH_SESSION_ID=ODViMzQ0MTAtYTc3OS00M2FlLWI4ZjUtMWUwNzQxOTM2NDU5LnRmRjRzbnRHYnNhX0g2OWVWN0lDWWpzMlhqY0VHOUVLZ0pNOHNXRGZaWUJKTlVvQlNDZlhFNC16Z0haN08taUR3WnF6YWthVk01R08tTW9mZWJmRkl3.fabrix-iam-keycloak-5db5ccc844-2msgm-55590;Version=1;Path=/iam-keycloak/realms/fabrix/;Secure;HttpOnly;SameSite=None
+Set-Cookie: KC_AUTH_SESSION_HASH=6SW8up8MTnPaY2UuUfWs0DVXgZ5qOgQ82wDsgBVLKaM;Version=1;Path=/iam-keycloak/realms/fabrix/;Max-Age=60;Secure;SameSite=Strict
+Cache-Control: no-store, must-revalidate, max-age=0
+Set-Cookie: KC_RESTART=eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..zWtsJNDbRsy4zOsPkp1Htg.Jv_6gTe0Aprma_YORj82-nFuZKHv-eC5PRmgEJ0XGyq17r1SB5aVEV2frTB9QerYtUTXuGhFKzgz8UAD7qwoCumkPH7PcqoWjrXT5L671N4pUpfA9LaNDsjEtn-ntSS_AwRdl1awnl3hDR6pCzY6r4l2cUopL9K8BHR1eptZucYOZ5Fl58Eafo0ZU0wyi0m250ERTujxIAnqe-F8_hPGZeBdYB_CS1IrzC35O2S8HHpgRG5L368W1LiVOVhP-wt-K2l0jLdPG7hHaZx_VH6aM-PkmCL1sxeeTIAdyypKaXiZqEWLuSruK7Olm8aE7ru3zT-ifWbwN4NV42ZL3tp2tan_ozURYkFW2PJHL1K5U9z26wz77WiLFk-IgFVc1hz1q73pD5tI7s_WBfFSrVAxMUxWgoPbt_RjMYmnDjmCv_5BhVFEe53oxg3E1rxswewy56iHaN0z9yuhr8cch7SeY49a_FP5fosKGybPzLMDtK1WdD1gqy0oYHq_eg8JDGdALw-MNWgXD_W2GYIlCOK8GNiJLkc1bLNqLGzY93Tk0zWn_Mvop_IGHdmgP_KwGc4kpWsnOOB8EIKWDeNQz85Nnxv2o51dkHMJ0uXpaIWotpXtqvyhVfBYMFI-jLv8KaDRT7bX49R98CKlovdEcvLXZ0dCVDVh85au_kbgbV8wGxhz2T1GNhdrksCMLLeX4XuFe7vWxx45Zv7MtFkC5I3a6KLNoBSbQKVBmBgJv8SaFVe6EdcyWQHD_wb6fcRTfECLAwMGQdDsBfi6iUZ1EIXtV4A2-XTpDj0vLAJisk0wKHEzThdn29cJ0L4KLP-W4uiAgshTiviWoSWiEFex3wyZEXt3H82lPaK2qu9UHO9LdwA.f3qnphyhWDBPW49MWt83CA;Version=1;Path=/iam-keycloak/realms/fabrix/;Secure;HttpOnly;SameSite=None
+Location: https://genai.sec.samsung.net/iam-keycloak/realms/fabrix/broker/ad/login?session_code=AH8cQUSAG4is_JHFyPyiRPLTU5QIKbziImoR_NQe16k&client_id=fabrix&tab_id=08Oy0YRCayw&client_data=eyJydSI6Imh0dHBzOi8vZ2VuYWkuc2VjLnNhbXN1bmcubmV0L2FwaS9hY2NvdW50L2F1dGgvY2FsbGJhY2siLCJydCI6ImNvZGUiLCJzdCI6IlkwZ3BxMkp0RTdUZjE0VkU2NnFwY2JwdSJ9
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+
+GET /iam-keycloak/realms/fabrix/protocol/openid-connect/auth?response_type=code&client_id=fabrix&redirect_uri=https%3A%2F%2Fgenai.sec.samsung.net%2Fapi%2Faccount%2Fauth%2Fcallback&scope=openid&state=Y0gpq2JtE7Tf14VE66qpcbpu HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Cookie: INGRESSCOOKIE=1764212331.095.1662.47196|106b6c0c4dcdde326b101801aa007c6b; rd=https%3A%2F%2Fgenai.sec.samsung.net%2F; connect.sid=s%3ALthPYMA5NWMCDMt5voXDQhz9iBtV0lZR.URrThyarel88YJyTdwCv4rptmuvlVOyDp0cyh%2BoyqwU
+Host: genai.sec.samsung.net
+Pragma: no-cache
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: none
+Sec-Fetch-User: ?1
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0
+sec-ch-ua: "Not;A=Brand";v="99", "Microsoft Edge";v="139", "Chromium";v="139"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Linux"
+
+4.
+Request URL
+https://genai.sec.samsung.net/iam-keycloak/realms/fabrix/broker/ad/login?session_code=AH8cQUSAG4is_JHFyPyiRPLTU5QIKbziImoR_NQe16k&client_id=fabrix&tab_id=08Oy0YRCayw&client_data=eyJydSI6Imh0dHBzOi8vZ2VuYWkuc2VjLnNhbXN1bmcubmV0L2FwaS9hY2NvdW50L2F1dGgvY2FsbGJhY2siLCJydCI6ImNvZGUiLCJzdCI6IlkwZ3BxMkp0RTdUZjE0VkU2NnFwY2JwdSJ9
+Request Method
+GET
+Status Code
+302 Found
+Remote Address
+10.195.107.10:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 302 Found
+Date: Thu, 27 Nov 2025 02:58:50 GMT
+Content-Length: 0
+Connection: keep-alive
+Cache-Control: no-cache
+Location: https://sts.secsso.net/adfs/ls/?SAMLRequest=jZLNbtswEIRfReBdon7q2iYsA26MogaS1oidHHIpaHLlEKZIlbtMnbevLKVoekiQG0HO8pud3QXK1nZiFenR3cKvCEjJubUOxfBQsxic8BINCidbQEFK7FY316LMctEFT155y8aS98USEQIZ79grwIdLVn%2BPV95hbCHsIDwZBXe31zV7JOpQcH4EJ02GoLL%2Bb4zumDkgbmSbnuBZWS9PPIC0LfJGHoI580PwJwhcag5Od9446klEwRwiwUgy7viC2jgN55pNWLLuUzJOXuz8gyPhBY3oB6rUDXKLnCVffVAwBFyzRloElmzWNdusf84%2FV%2FNKV3naFNU0%2FTSfqVROmzyFspjKRkM1m13EiLGHI0lHNSvzcpIWRVpO93kpJjMxybOqKB5Ysn2ZxhfjdO%2F6%2FWgPowjFt%2F1%2Bm25%2F7PYsuYeAQ0u9gC0Xl%2FmIAR6WH094wV%2FXLcb1%2Bt7zN%2Butt0Y9Jytr%2Fe%2BrfhAENaMQYYiolfS24yIrhhuj02aQiuiwA2UaA5rx5Qj9f42XfwA%3D&RelayState=nFmkINlIhmt9xIVZFJdQq-FC4U2YPL-lO16uxVBHK0A.08Oy0YRCayw.eH1UW2HHSqeplyok-uixUw
+Pragma: no-cache
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+
+GET /iam-keycloak/realms/fabrix/broker/ad/login?session_code=AH8cQUSAG4is_JHFyPyiRPLTU5QIKbziImoR_NQe16k&client_id=fabrix&tab_id=08Oy0YRCayw&client_data=eyJydSI6Imh0dHBzOi8vZ2VuYWkuc2VjLnNhbXN1bmcubmV0L2FwaS9hY2NvdW50L2F1dGgvY2FsbGJhY2siLCJydCI6ImNvZGUiLCJzdCI6IlkwZ3BxMkp0RTdUZjE0VkU2NnFwY2JwdSJ9 HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Cookie: AUTH_SESSION_ID=ODViMzQ0MTAtYTc3OS00M2FlLWI4ZjUtMWUwNzQxOTM2NDU5LnRmRjRzbnRHYnNhX0g2OWVWN0lDWWpzMlhqY0VHOUVLZ0pNOHNXRGZaWUJKTlVvQlNDZlhFNC16Z0haN08taUR3WnF6YWthVk01R08tTW9mZWJmRkl3.fabrix-iam-keycloak-5db5ccc844-2msgm-55590; KC_AUTH_SESSION_HASH=6SW8up8MTnPaY2UuUfWs0DVXgZ5qOgQ82wDsgBVLKaM; KC_RESTART=eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..zWtsJNDbRsy4zOsPkp1Htg.Jv_6gTe0Aprma_YORj82-nFuZKHv-eC5PRmgEJ0XGyq17r1SB5aVEV2frTB9QerYtUTXuGhFKzgz8UAD7qwoCumkPH7PcqoWjrXT5L671N4pUpfA9LaNDsjEtn-ntSS_AwRdl1awnl3hDR6pCzY6r4l2cUopL9K8BHR1eptZucYOZ5Fl58Eafo0ZU0wyi0m250ERTujxIAnqe-F8_hPGZeBdYB_CS1IrzC35O2S8HHpgRG5L368W1LiVOVhP-wt-K2l0jLdPG7hHaZx_VH6aM-PkmCL1sxeeTIAdyypKaXiZqEWLuSruK7Olm8aE7ru3zT-ifWbwN4NV42ZL3tp2tan_ozURYkFW2PJHL1K5U9z26wz77WiLFk-IgFVc1hz1q73pD5tI7s_WBfFSrVAxMUxWgoPbt_RjMYmnDjmCv_5BhVFEe53oxg3E1rxswewy56iHaN0z9yuhr8cch7SeY49a_FP5fosKGybPzLMDtK1WdD1gqy0oYHq_eg8JDGdALw-MNWgXD_W2GYIlCOK8GNiJLkc1bLNqLGzY93Tk0zWn_Mvop_IGHdmgP_KwGc4kpWsnOOB8EIKWDeNQz85Nnxv2o51dkHMJ0uXpaIWotpXtqvyhVfBYMFI-jLv8KaDRT7bX49R98CKlovdEcvLXZ0dCVDVh85au_kbgbV8wGxhz2T1GNhdrksCMLLeX4XuFe7vWxx45Zv7MtFkC5I3a6KLNoBSbQKVBmBgJv8SaFVe6EdcyWQHD_wb6fcRTfECLAwMGQdDsBfi6iUZ1EIXtV4A2-XTpDj0vLAJisk0wKHEzThdn29cJ0L4KLP-W4uiAgshTiviWoSWiEFex3wyZEXt3H82lPaK2qu9UHO9LdwA.f3qnphyhWDBPW49MWt83CA; INGRESSCOOKIE=1764212331.095.1662.47196|106b6c0c4dcdde326b101801aa007c6b; rd=https%3A%2F%2Fgenai.sec.samsung.net%2F; connect.sid=s%3ALthPYMA5NWMCDMt5voXDQhz9iBtV0lZR.URrThyarel88YJyTdwCv4rptmuvlVOyDp0cyh%2BoyqwU
+Host: genai.sec.samsung.net
+Pragma: no-cache
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: none
+Sec-Fetch-User: ?1
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0
+sec-ch-ua: "Not;A=Brand";v="99", "Microsoft Edge";v="139", "Chromium";v="139"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Linux"
+
+5. this is the adfs login page, so user must input username and password here
+
+Request URL
+https://sts.secsso.net/adfs/ls/?SAMLRequest=jZLNbtswEIRfReBdon7q2iYsA26MogaS1oidHHIpaHLlEKZIlbtMnbevLKVoekiQG0HO8pud3QXK1nZiFenR3cKvCEjJubUOxfBQsxic8BINCidbQEFK7FY316LMctEFT155y8aS98USEQIZ79grwIdLVn%2BPV95hbCHsIDwZBXe31zV7JOpQcH4EJ02GoLL%2Bb4zumDkgbmSbnuBZWS9PPIC0LfJGHoI580PwJwhcag5Od9446klEwRwiwUgy7viC2jgN55pNWLLuUzJOXuz8gyPhBY3oB6rUDXKLnCVffVAwBFyzRloElmzWNdusf84%2FV%2FNKV3naFNU0%2FTSfqVROmzyFspjKRkM1m13EiLGHI0lHNSvzcpIWRVpO93kpJjMxybOqKB5Ysn2ZxhfjdO%2F6%2FWgPowjFt%2F1%2Bm25%2F7PYsuYeAQ0u9gC0Xl%2FmIAR6WH094wV%2FXLcb1%2Bt7zN%2Butt0Y9Jytr%2Fe%2BrfhAENaMQYYiolfS24yIrhhuj02aQiuiwA2UaA5rx5Qj9f42XfwA%3D&RelayState=nFmkINlIhmt9xIVZFJdQq-FC4U2YPL-lO16uxVBHK0A.08Oy0YRCayw.eH1UW2HHSqeplyok-uixUw
+Request Method
+GET
+Status Code
+200 OK
+Remote Address
+10.40.68.241:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 200 OK
+Cache-Control: no-cache,no-store
+Pragma: no-cache
+Content-Length: 75180
+Content-Type: text/html; charset=utf-8
+Expires: -1
+Set-Cookie: MSISSignoutProtocol=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/adfs; HttpOnly; Secure
+X-Frame-Options: DENY
+Date: Thu, 27 Nov 2025 02:58:49 GMT
+
+HTTP/1.1 200 OK
+Cache-Control: no-cache,no-store
+Pragma: no-cache
+Content-Length: 75180
+Content-Type: text/html; charset=utf-8
+Expires: -1
+Set-Cookie: MSISSignoutProtocol=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/adfs; HttpOnly; Secure
+X-Frame-Options: DENY
+Date: Thu, 27 Nov 2025 02:58:49 GMT
+
+6. after inputting username and password, the form is submitted to the same URL with POST method
+Request URL
+https://sts.secsso.net/adfs/ls/?SAMLRequest=jZLNbtswEIRfReBdon7q2iYsA26MogaS1oidHHIpaHLlEKZIlbtMnbevLKVoekiQG0HO8pud3QXK1nZiFenR3cKvCEjJubUOxfBQsxic8BINCidbQEFK7FY316LMctEFT155y8aS98USEQIZ79grwIdLVn%2BPV95hbCHsIDwZBXe31zV7JOpQcH4EJ02GoLL%2Bb4zumDkgbmSbnuBZWS9PPIC0LfJGHoI580PwJwhcag5Od9446klEwRwiwUgy7viC2jgN55pNWLLuUzJOXuz8gyPhBY3oB6rUDXKLnCVffVAwBFyzRloElmzWNdusf84%2FV%2FNKV3naFNU0%2FTSfqVROmzyFspjKRkM1m13EiLGHI0lHNSvzcpIWRVpO93kpJjMxybOqKB5Ysn2ZxhfjdO%2F6%2FWgPowjFt%2F1%2Bm25%2F7PYsuYeAQ0u9gC0Xl%2FmIAR6WH094wV%2FXLcb1%2Bt7zN%2Butt0Y9Jytr%2Fe%2BrfhAENaMQYYiolfS24yIrhhuj02aQiuiwA2UaA5rx5Qj9f42XfwA%3D&RelayState=nFmkINlIhmt9xIVZFJdQq-FC4U2YPL-lO16uxVBHK0A.08Oy0YRCayw.eH1UW2HHSqeplyok-uixUw&client-request-id=553b4e1a-d875-4a4f-570a-0080037c0479
+Request Method
+POST
+Status Code
+302 Found
+Remote Address
+10.40.68.241:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 302 Found
+Content-Length: 0
+Content-Type: text/html; charset=utf-8
+Location: https://sts.secsso.net:443/adfs/ls/?SAMLRequest=jZLNbtswEIRfReBdon7q2iYsA26MogaS1oidHHIpaHLlEKZIlbtMnbevLKVoekiQG0HO8pud3QXK1nZiFenR3cKvCEjJubUOxfBQsxic8BINCidbQEFK7FY316LMctEFT155y8aS98USEQIZ79grwIdLVn%2BPV95hbCHsIDwZBXe31zV7JOpQcH4EJ02GoLL%2Bb4zumDkgbmSbnuBZWS9PPIC0LfJGHoI580PwJwhcag5Od9446klEwRwiwUgy7viC2jgN55pNWLLuUzJOXuz8gyPhBY3oB6rUDXKLnCVffVAwBFyzRloElmzWNdusf84%2FV%2FNKV3naFNU0%2FTSfqVROmzyFspjKRkM1m13EiLGHI0lHNSvzcpIWRVpO93kpJjMxybOqKB5Ysn2ZxhfjdO%2F6%2FWgPowjFt%2F1%2Bm25%2F7PYsuYeAQ0u9gC0Xl%2FmIAR6WH094wV%2FXLcb1%2Bt7zN%2Butt0Y9Jytr%2Fe%2BrfhAENaMQYYiolfS24yIrhhuj02aQiuiwA2UaA5rx5Qj9f42XfwA%3D&RelayState=nFmkINlIhmt9xIVZFJdQq-FC4U2YPL-lO16uxVBHK0A.08Oy0YRCayw.eH1UW2HHSqeplyok-uixUw&client-request-id=553b4e1a-d875-4a4f-570a-0080037c0479
+Set-Cookie: MSISSignoutProtocol=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/adfs; HttpOnly; Secure
+Set-Cookie: MSISAuth=AAEAABICvdlqMbS5IVJ+dJjhkO2j8Na80JppOeLBxwkf1obe4Mo3NIPQRaDA/KOmJBKQCXKUdcCRWF1K2bJuLPgX31s3bFfy2sFI0T2ew6Ym74kpxG3uaAAAu8Yr7a2vaMYnuXYlTzSat86zZZAvg7Xbb94D6iU/Mrzy2tVNRjhR7+ckXzWLhpiFgLkPZYqLl9Kqu7QBk1pfIZmJUNeD0TpIvu0uTwTHjg6x2w5/ion6ogHsv0gA/k8PdBajD0LY6UbTfra26ZzCqsetlX0li2dLm2Q5qWaZT2DsKpK7719f67bYSZlbUtl7OMQOyiNPH+uNEbqQ5kVZZKv65aB5OGzPLeMlp/q+SPFXMTpvB6i+YVreS2tKrGwWlL2FiqNyyNkwTQABAAAJtfMGeWMWmlrawmxqrYTQAnG/K2Iswx9j8InlusYgoMFhhwoFeffPpGG2MVloWI37C1jjK9elNrFPq9S+m+LZ+4tlJ7Db8TwkTMT1Es8LzzEYAr7Nv/EgnYM8NW7OYa/VFXT1XaC1IPeEIIiFppuSjWyVQTMwFWSCCkqBrDh0GMOu/Vx8jnWEn15MkVydTh+a49N305kCp+50bQlFuaf/MkdK0vyStF6e4tkFMsPzCl0Zc6WdARYPDEl0+Lt1jPunRbfkFQmEQ0ZPYtrx0VeeGn81LatP8zkH+t8u2EfN809jb6MRu+Ct9/pnSgaF0n8EoNs8Pns5+6jGpgU78p7ikAMAAJez67Oa6HuAV6qTbKKT7RdSFuHDyNy3KvnKMgPWCh2V9T0nNCxjexS1vk4cT0fOybU8U5kRIzaC2hZdGygmU1jkgMCRTQRsc1KHfMvU4AFdRUSyXq+SRdd6RI8A6OCW5kYv4d+alAHSJNE3hZswSpoUk2GTCrPau3o8NxnR2dydgWPbTBnP5iWck5JvfhgjtXvMIDMUUZClW/hCZ+9RiQppKK4XIgmJA2RH8HNGvkIpg4cTF8T7/2F56uef2W9gey+5ucOyQIqoZ1x0wXydoydruXz48HYaBi6m/8mIPB/XYYEO/YAz7DX761X5OQk5eldPkaPzOxqq51OGwSSL3oJX4kcgRk4CysRwahDSK2JBd4SwFxw6ZRW3wgqNj+MtYlUDYLzfplahsZnNl8w2vs7ALUpa3cCuo4OgruArsSK/XiA4emU0u498eoQbIdLLaN8TYRa++7O6uktvW3d4ubFeINxk2suUXG1ttbCupjI9J1UdzsqDfhgtn/5nnktN5tExjNlfVXNXap+KZC5zsZExI3INtd/rCvS7G+vAnVnu66t3f5maf7L/tI0cAumbtCxC1zBqt5I48YqrbigjzYntS6Fi92ZSToJKRpW3a4DQCzkUAJdz1NaaXkaj5U1R9lplmI2MGrmtlDPz42dUB8i83TUxcPkntLcfObD5Dt9Pdi18AheRZGPUTrrhF4xdMQfU2t7+xDNd131Zm4DG+GpYnjOT6ZBOjh4L7u6MKV+PyNKaxKiGT84DcpJZwjd9U9D00TZvIv9nVk+qe1WK1LYZ5Q5KhCX69nQcovrteEjPVrJJH973V/fWuquL0/NrpGIYS6Xpa0Ir8tTmL/dKRXRdUTjEPBSEgkZk/xAOqlLuQPWYkH2Fc5qRFhXC1Hj9ITLR/JPQPWEC74JbNHUVXgIXQXDjZyErhc2fZGaTnjZNC6+fEEb48ZLFrzm/QNDHqG9AUrl2R6EJaxcGSN2VmvV0Vwm4hglvDZsovdD4xPOimS78xOw7SXn6NxfJg88oFOkhd4apjEqsFEmIq/EKh4nkl2LdpDRvCFCyMkY2ksxfQEukBvgUj2wOZRotEQvfOdu4UtGRWngY0RLXDtYGDRTEQckRPmugL8E8eaYrQcfAcmMOKkUh2b9IrEZ/M43MfEzIlnHGzVNGCmh6u4oPKBO/nCpCatV5EtRLZDglk4VDB43OLWwZnHB8VhI5SMyyqQ==; path=/adfs; HttpOnly; Secure; SameSite=None
+
+POST /adfs/ls/?SAMLRequest=jZLNbtswEIRfReBdon7q2iYsA26MogaS1oidHHIpaHLlEKZIlbtMnbevLKVoekiQG0HO8pud3QXK1nZiFenR3cKvCEjJubUOxfBQsxic8BINCidbQEFK7FY316LMctEFT155y8aS98USEQIZ79grwIdLVn%2BPV95hbCHsIDwZBXe31zV7JOpQcH4EJ02GoLL%2Bb4zumDkgbmSbnuBZWS9PPIC0LfJGHoI580PwJwhcag5Od9446klEwRwiwUgy7viC2jgN55pNWLLuUzJOXuz8gyPhBY3oB6rUDXKLnCVffVAwBFyzRloElmzWNdusf84%2FV%2FNKV3naFNU0%2FTSfqVROmzyFspjKRkM1m13EiLGHI0lHNSvzcpIWRVpO93kpJjMxybOqKB5Ysn2ZxhfjdO%2F6%2FWgPowjFt%2F1%2Bm25%2F7PYsuYeAQ0u9gC0Xl%2FmIAR6WH094wV%2FXLcb1%2Bt7zN%2Butt0Y9Jytr%2Fe%2BrfhAENaMQYYiolfS24yIrhhuj02aQiuiwA2UaA5rx5Qj9f42XfwA%3D&RelayState=nFmkINlIhmt9xIVZFJdQq-FC4U2YPL-lO16uxVBHK0A.08Oy0YRCayw.eH1UW2HHSqeplyok-uixUw&client-request-id=553b4e1a-d875-4a4f-570a-0080037c0479 HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Content-Length: 79
+Content-Type: application/x-www-form-urlencoded
+Host: sts.secsso.net
+Origin: https://sts.secsso.net
+Pragma: no-cache
+Referer: https://sts.secsso.net/adfs/ls/?SAMLRequest=jZLNbtswEIRfReBdon7q2iYsA26MogaS1oidHHIpaHLlEKZIlbtMnbevLKVoekiQG0HO8pud3QXK1nZiFenR3cKvCEjJubUOxfBQsxic8BINCidbQEFK7FY316LMctEFT155y8aS98USEQIZ79grwIdLVn%2BPV95hbCHsIDwZBXe31zV7JOpQcH4EJ02GoLL%2Bb4zumDkgbmSbnuBZWS9PPIC0LfJGHoI580PwJwhcag5Od9446klEwRwiwUgy7viC2jgN55pNWLLuUzJOXuz8gyPhBY3oB6rUDXKLnCVffVAwBFyzRloElmzWNdusf84%2FV%2FNKV3naFNU0%2FTSfqVROmzyFspjKRkM1m13EiLGHI0lHNSvzcpIWRVpO93kpJjMxybOqKB5Ysn2ZxhfjdO%2F6%2FWgPowjFt%2F1%2Bm25%2F7PYsuYeAQ0u9gC0Xl%2FmIAR6WH094wV%2FXLcb1%2Bt7zN%2Butt0Y9Jytr%2Fe%2BrfhAENaMQYYiolfS24yIrhhuj02aQiuiwA2UaA5rx5Qj9f42XfwA%3D&RelayState=nFmkINlIhmt9xIVZFJdQq-FC4U2YPL-lO16uxVBHK0A.08Oy0YRCayw.eH1UW2HHSqeplyok-uixUw
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: same-origin
+Sec-Fetch-User: ?1
+Upgrade-Insecure-Requests: 1
+
+7. 
+Request URL
+https://sts.secsso.net/adfs/ls/?SAMLRequest=jZLNbtswEIRfReBdon7q2iYsA26MogaS1oidHHIpaHLlEKZIlbtMnbevLKVoekiQG0HO8pud3QXK1nZiFenR3cKvCEjJubUOxfBQsxic8BINCidbQEFK7FY316LMctEFT155y8aS98USEQIZ79grwIdLVn%2BPV95hbCHsIDwZBXe31zV7JOpQcH4EJ02GoLL%2Bb4zumDkgbmSbnuBZWS9PPIC0LfJGHoI580PwJwhcag5Od9446klEwRwiwUgy7viC2jgN55pNWLLuUzJOXuz8gyPhBY3oB6rUDXKLnCVffVAwBFyzRloElmzWNdusf84%2FV%2FNKV3naFNU0%2FTSfqVROmzyFspjKRkM1m13EiLGHI0lHNSvzcpIWRVpO93kpJjMxybOqKB5Ysn2ZxhfjdO%2F6%2FWgPowjFt%2F1%2Bm25%2F7PYsuYeAQ0u9gC0Xl%2FmIAR6WH094wV%2FXLcb1%2Bt7zN%2Butt0Y9Jytr%2Fe%2BrfhAENaMQYYiolfS24yIrhhuj02aQiuiwA2UaA5rx5Qj9f42XfwA%3D&RelayState=nFmkINlIhmt9xIVZFJdQq-FC4U2YPL-lO16uxVBHK0A.08Oy0YRCayw.eH1UW2HHSqeplyok-uixUw&client-request-id=553b4e1a-d875-4a4f-570a-0080037c0479
+Request Method
+GET
+Status Code
+200 OK
+Remote Address
+10.40.68.241:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 200 OK
+Cache-Control: no-cache,no-store
+Pragma: no-cache
+Content-Length: 8083
+Content-Type: text/html; charset=utf-8
+Expires: -1
+Set-Cookie: MSISSignoutProtocol=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/adfs; HttpOnly; Secure
+Set-Cookie: MSISAuth=AAEAAA7trJ1U+Kei8vEX3L7kqTPeszzCr3omjBN2b+U/486cuR83DLRMs3LmQoSX16MhmJ3S4mOVY7ckRGNYHxgvN5bXaUNmM+6qTpOiQO/pynY/MWjgh8wNXhf5a6V/nxjAhsEvA3jbJWNlL6E5IwhgUynvf/G6y6noy6oAFChM1nkJYWgUhvuC5Dfu9gd6/Pa/jYhrD9CgmMkXlyLTwtmtBD2S0IZstZ11C5BU5FEBGRp9emEQSWLewvR5OHWt399PxN/MnWli18CYVMovMz5uO1CjsXJrvB3Iav5kwGmBv0sQ6/KnCVxnZqVL6sj+4b+IN2TylOnx5ZhopTd/Qg0qORYlp/q+SPFXMTpvB6i+YVreS2tKrGwWlL2FiqNyyNkwTQABAABzhwMFW9ecP8ZUUUsDclKugehJn4QpI6e9x8DBX0XyxQqgGd5T/dqnbDqpELN6BHB/fpeUkQWbtPj/smX4mxvIdwkzzKTMOPQ8ZESy9BnRQbgCulqIGi/B8D8iu3KjY8to2Qp+G3oTJAYSHPWp8g8vcCQFcGX6h7lCO7KpS8j2XLuM2SeSXz16nacPjsq1kUNc95wd58IHxrTCiOkX2Nezdo3Ap732xYvb2YU3zlSMVjTC28ZJYlJMEepP89eESE451cMQ+RyFHDc+wo5Hj0Wu2xSfSSWo4tGL9aj2+/EoNVn7tvlIFfO2XRHAknsoWs8e4TmIRkfCuDRnPmvGgMI7kAMAADsx7uw3FWG6O5VLGbXDnmmSRyyunQg4RGUZlfzVVUtqlJKlhi4QzqDRGzOIL9WMAoCHp7CY2U2NCkoO2vLqDd3FI6uaiP+YjwNknlLFdaJ29EUG8mwxDjjH/oGOEi4+j8tfvbnABMBpOvJjy1sXpB/1MFYtDGJMto5EAW9awd+7U6FfZDA903pDnbLcPmxcK7sxjGkM2hxlBaMEJsYO1H0TdIua/M4CffinM3SPMheTatpvvN0eIXXKgD9YIxnQaq9oSxI3pLSdB4M44ARIrcKuWFoeC1IvViaKPGzI/gpzqtL6gaX8kzSiqp0FDfRnBnQy8+BMMmNfwd7/wL5RP4i1vmpqPs6wcrN/XNXw8o1A1PbqcvJAqZD6/z3dFJ/pk0WS03YMCp5jQSFwB1frgUA/B3NLvVdbX/a06/ncxUVtUk0w0biLrEKRHa7pN6+EZ7uC5UQMCfn2ok7Mdln3sPLNAt/ao4ycK42PsyGkylqoMz5uO2dP4k1ZqzO+b+xQmx3oRp49q8I5q288hKCW+/DQJbHhmdilvRZPDUIY2A6xSY+GGHMAMtXXA5AV+SU12tmbDHRLfWNMFeUOCT6JCB4wVtb5Cl3LpthQrJbITzTs4NnTNIdHJxoK9KagUHsDrcnHnlb74SJP8EwbDtX2D+XS7RfzHtOE3hS0heIydOR7ZykMG+0Edi0cop5DZOWmfJZkuYpeMDjwl1aq0H4ONujjC65blkMX/Z+BiazxymEmIYqhSdH2Z6Q8GQoLvsuTJrQFc6bGweRH0zhBiCrsGt/nMfs8ayKU12Bb0k8+hUIJ1XkRbIU+gsAdPgkYyK/oLtWAxx4pwvq6VlIKCtbTICNK96FPeqEtY+hG9SpBBuSgcdzzTsJxl/HdoquRJqgXGk9GFGra4l8hJFDGOjFDZz+hM3Xcxf26FjDjTsZNvArOSkQ6CUySgCWqSjj5j4Y1UGtaYGMBR1+19iSTuHBxDwMwuWSyj/Z4gAjmJ+hczMdLp5lYJIM3AnHDHTEhd5cgNOysThMO7+hZCRn9DTBfnLKFuMSDQuLrNb+X/Gpqs90ezs/bv2N1qK6wL5AEQVr6GjCz37ldApg6zpC5F+d5BlyeeFF2eH+A/VE+0DClsxVvfZ7L3sjD48dbC0HZXCao1UTvIMqDZWW2tlYmzpVJZ1ckiXJMC7TC44+ZUyO1CTOztsuGeNIlUnLJfQSy6w482w==; path=/adfs; HttpOnly; Secure; SameSite=None
+Set-Cookie: MSISAuthenticated=MTEvMjcvMjAyNSAzOjIxOjA0IEFN; path=/adfs; HttpOnly; Secure; SameSite=None
+Set-Cookie: MSISLoopDetectionCookie=MjAyNS0xMS0yNzowMzoyMTowNFpcMQ==; path=/adfs; HttpOnly; Secure; SameSite=None
+
+GET /adfs/ls/?SAMLRequest=jZLNbtswEIRfReBdon7q2iYsA26MogaS1oidHHIpaHLlEKZIlbtMnbevLKVoekiQG0HO8pud3QXK1nZiFenR3cKvCEjJubUOxfBQsxic8BINCidbQEFK7FY316LMctEFT155y8aS98USEQIZ79grwIdLVn%2BPV95hbCHsIDwZBXe31zV7JOpQcH4EJ02GoLL%2Bb4zumDkgbmSbnuBZWS9PPIC0LfJGHoI580PwJwhcag5Od9446klEwRwiwUgy7viC2jgN55pNWLLuUzJOXuz8gyPhBY3oB6rUDXKLnCVffVAwBFyzRloElmzWNdusf84%2FV%2FNKV3naFNU0%2FTSfqVROmzyFspjKRkM1m13EiLGHI0lHNSvzcpIWRVpO93kpJjMxybOqKB5Ysn2ZxhfjdO%2F6%2FWgPowjFt%2F1%2Bm25%2F7PYsuYeAQ0u9gC0Xl%2FmIAR6WH094wV%2FXLcb1%2Bt7zN%2Butt0Y9Jytr%2Fe%2BrfhAENaMQYYiolfS24yIrhhuj02aQiuiwA2UaA5rx5Qj9f42XfwA%3D&RelayState=nFmkINlIhmt9xIVZFJdQq-FC4U2YPL-lO16uxVBHK0A.08Oy0YRCayw.eH1UW2HHSqeplyok-uixUw&client-request-id=553b4e1a-d875-4a4f-570a-0080037c0479 HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Cookie: MSISAuth=AAEAABICvdlqMbS5IVJ+dJjhkO2j8Na80JppOeLBxwkf1obe4Mo3NIPQRaDA/KOmJBKQCXKUdcCRWF1K2bJuLPgX31s3bFfy2sFI0T2ew6Ym74kpxG3uaAAAu8Yr7a2vaMYnuXYlTzSat86zZZAvg7Xbb94D6iU/Mrzy2tVNRjhR7+ckXzWLhpiFgLkPZYqLl9Kqu7QBk1pfIZmJUNeD0TpIvu0uTwTHjg6x2w5/ion6ogHsv0gA/k8PdBajD0LY6UbTfra26ZzCqsetlX0li2dLm2Q5qWaZT2DsKpK7719f67bYSZlbUtl7OMQOyiNPH+uNEbqQ5kVZZKv65aB5OGzPLeMlp/q+SPFXMTpvB6i+YVreS2tKrGwWlL2FiqNyyNkwTQABAAAJtfMGeWMWmlrawmxqrYTQAnG/K2Iswx9j8InlusYgoMFhhwoFeffPpGG2MVloWI37C1jjK9elNrFPq9S+m+LZ+4tlJ7Db8TwkTMT1Es8LzzEYAr7Nv/EgnYM8NW7OYa/VFXT1XaC1IPeEIIiFppuSjWyVQTMwFWSCCkqBrDh0GMOu/Vx8jnWEn15MkVydTh+a49N305kCp+50bQlFuaf/MkdK0vyStF6e4tkFMsPzCl0Zc6WdARYPDEl0+Lt1jPunRbfkFQmEQ0ZPYtrx0VeeGn81LatP8zkH+t8u2EfN809jb6MRu+Ct9/pnSgaF0n8EoNs8Pns5+6jGpgU78p7ikAMAAJez67Oa6HuAV6qTbKKT7RdSFuHDyNy3KvnKMgPWCh2V9T0nNCxjexS1vk4cT0fOybU8U5kRIzaC2hZdGygmU1jkgMCRTQRsc1KHfMvU4AFdRUSyXq+SRdd6RI8A6OCW5kYv4d+alAHSJNE3hZswSpoUk2GTCrPau3o8NxnR2dydgWPbTBnP5iWck5JvfhgjtXvMIDMUUZClW/hCZ+9RiQppKK4XIgmJA2RH8HNGvkIpg4cTF8T7/2F56uef2W9gey+5ucOyQIqoZ1x0wXydoydruXz48HYaBi6m/8mIPB/XYYEO/YAz7DX761X5OQk5eldPkaPzOxqq51OGwSSL3oJX4kcgRk4CysRwahDSK2JBd4SwFxw6ZRW3wgqNj+MtYlUDYLzfplahsZnNl8w2vs7ALUpa3cCuo4OgruArsSK/XiA4emU0u498eoQbIdLLaN8TYRa++7O6uktvW3d4ubFeINxk2suUXG1ttbCupjI9J1UdzsqDfhgtn/5nnktN5tExjNlfVXNXap+KZC5zsZExI3INtd/rCvS7G+vAnVnu66t3f5maf7L/tI0cAumbtCxC1zBqt5I48YqrbigjzYntS6Fi92ZSToJKRpW3a4DQCzkUAJdz1NaaXkaj5U1R9lplmI2MGrmtlDPz42dUB8i83TUxcPkntLcfObD5Dt9Pdi18AheRZGPUTrrhF4xdMQfU2t7+xDNd131Zm4DG+GpYnjOT6ZBOjh4L7u6MKV+PyNKaxKiGT84DcpJZwjd9U9D00TZvIv9nVk+qe1WK1LYZ5Q5KhCX69nQcovrteEjPVrJJH973V/fWuquL0/NrpGIYS6Xpa0Ir8tTmL/dKRXRdUTjEPBSEgkZk/xAOqlLuQPWYkH2Fc5qRFhXC1Hj9ITLR/JPQPWEC74JbNHUVXgIXQXDjZyErhc2fZGaTnjZNC6+fEEb48ZLFrzm/QNDHqG9AUrl2R6EJaxcGSN2VmvV0Vwm4hglvDZsovdD4xPOimS78xOw7SXn6NxfJg88oFOkhd4apjEqsFEmIq/EKh4nkl2LdpDRvCFCyMkY2ksxfQEukBvgUj2wOZRotEQvfOdu4UtGRWngY0RLXDtYGDRTEQckRPmugL8E8eaYrQcfAcmMOKkUh2b9IrEZ/M43MfEzIlnHGzVNGCmh6u4oPKBO/nCpCatV5EtRLZDglk4VDB43OLWwZnHB8VhI5SMyyqQ==
+Host: sts.secsso.net
+Pragma: no-cache
+Referer: https://sts.secsso.net/adfs/ls/?SAMLRequest=jZLNbtswEIRfReBdon7q2iYsA26MogaS1oidHHIpaHLlEKZIlbtMnbevLKVoekiQG0HO8pud3QXK1nZiFenR3cKvCEjJubUOxfBQsxic8BINCidbQEFK7FY316LMctEFT155y8aS98USEQIZ79grwIdLVn%2BPV95hbCHsIDwZBXe31zV7JOpQcH4EJ02GoLL%2Bb4zumDkgbmSbnuBZWS9PPIC0LfJGHoI580PwJwhcag5Od9446klEwRwiwUgy7viC2jgN55pNWLLuUzJOXuz8gyPhBY3oB6rUDXKLnCVffVAwBFyzRloElmzWNdusf84%2FV%2FNKV3naFNU0%2FTSfqVROmzyFspjKRkM1m13EiLGHI0lHNSvzcpIWRVpO93kpJjMxybOqKB5Ysn2ZxhfjdO%2F6%2FWgPowjFt%2F1%2Bm25%2F7PYsuYeAQ0u9gC0Xl%2FmIAR6WH094wV%2FXLcb1%2Bt7zN%2Butt0Y9Jytr%2Fe%2BrfhAENaMQYYiolfS24yIrhhuj02aQiuiwA2UaA5rx5Qj9f42XfwA%3D&RelayState=nFmkINlIhmt9xIVZFJdQq-FC4U2YPL-lO16uxVBHK0A.08Oy0YRCayw.eH1UW2HHSqeplyok-uixUw
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: same-origin
+Sec-Fetch-User: ?1
+Upgrade-Insecure-Requests: 1
+
+8. 
+Request URL
+https://genai.sec.samsung.net/iam-keycloak/realms/fabrix/broker/ad/endpoint
+Request Method
+POST
+Status Code
+302 Found
+Remote Address
+10.195.107.10:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 302 Found
+Date: Thu, 27 Nov 2025 03:21:05 GMT
+Content-Length: 0
+Connection: keep-alive
+Content-Security-Policy: frame-src 'self'; frame-ancestors 'self'; object-src 'none';
+Location: https://genai.sec.samsung.net/iam-keycloak/realms/fabrix/login-actions/post-broker-login?client_id=fabrix&tab_id=08Oy0YRCayw&client_data=eyJydSI6Imh0dHBzOi8vZ2VuYWkuc2VjLnNhbXN1bmcubmV0L2FwaS9hY2NvdW50L2F1dGgvY2FsbGJhY2siLCJydCI6ImNvZGUiLCJzdCI6IlkwZ3BxMkp0RTdUZjE0VkU2NnFwY2JwdSJ9
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+X-Robots-Tag: none
+X-XSS-Protection: 1; mode=block
+
+POST /iam-keycloak/realms/fabrix/broker/ad/endpoint HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Content-Length: 7685
+Content-Type: application/x-www-form-urlencoded
+Cookie: AUTH_SESSION_ID=ODViMzQ0MTAtYTc3OS00M2FlLWI4ZjUtMWUwNzQxOTM2NDU5LnRmRjRzbnRHYnNhX0g2OWVWN0lDWWpzMlhqY0VHOUVLZ0pNOHNXRGZaWUJKTlVvQlNDZlhFNC16Z0haN08taUR3WnF6YWthVk01R08tTW9mZWJmRkl3.fabrix-iam-keycloak-5db5ccc844-2msgm-55590; KC_RESTART=eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..zWtsJNDbRsy4zOsPkp1Htg.Jv_6gTe0Aprma_YORj82-nFuZKHv-eC5PRmgEJ0XGyq17r1SB5aVEV2frTB9QerYtUTXuGhFKzgz8UAD7qwoCumkPH7PcqoWjrXT5L671N4pUpfA9LaNDsjEtn-ntSS_AwRdl1awnl3hDR6pCzY6r4l2cUopL9K8BHR1eptZucYOZ5Fl58Eafo0ZU0wyi0m250ERTujxIAnqe-F8_hPGZeBdYB_CS1IrzC35O2S8HHpgRG5L368W1LiVOVhP-wt-K2l0jLdPG7hHaZx_VH6aM-PkmCL1sxeeTIAdyypKaXiZqEWLuSruK7Olm8aE7ru3zT-ifWbwN4NV42ZL3tp2tan_ozURYkFW2PJHL1K5U9z26wz77WiLFk-IgFVc1hz1q73pD5tI7s_WBfFSrVAxMUxWgoPbt_RjMYmnDjmCv_5BhVFEe53oxg3E1rxswewy56iHaN0z9yuhr8cch7SeY49a_FP5fosKGybPzLMDtK1WdD1gqy0oYHq_eg8JDGdALw-MNWgXD_W2GYIlCOK8GNiJLkc1bLNqLGzY93Tk0zWn_Mvop_IGHdmgP_KwGc4kpWsnOOB8EIKWDeNQz85Nnxv2o51dkHMJ0uXpaIWotpXtqvyhVfBYMFI-jLv8KaDRT7bX49R98CKlovdEcvLXZ0dCVDVh85au_kbgbV8wGxhz2T1GNhdrksCMLLeX4XuFe7vWxx45Zv7MtFkC5I3a6KLNoBSbQKVBmBgJv8SaFVe6EdcyWQHD_wb6fcRTfECLAwMGQdDsBfi6iUZ1EIXtV4A2-XTpDj0vLAJisk0wKHEzThdn29cJ0L4KLP-W4uiAgshTiviWoSWiEFex3wyZEXt3H82lPaK2qu9UHO9LdwA.f3qnphyhWDBPW49MWt83CA; connect.sid=s%3ALthPYMA5NWMCDMt5voXDQhz9iBtV0lZR.URrThyarel88YJyTdwCv4rptmuvlVOyDp0cyh%2BoyqwU
+Host: genai.sec.samsung.net
+Origin: https://sts.secsso.net
+Pragma: no-cache
+Referer: https://sts.secsso.net/
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: cross-site
+Upgrade-Insecure-Requests: 1
+
+9. 
+Request URL
+https://genai.sec.samsung.net/iam-keycloak/realms/fabrix/login-actions/post-broker-login?client_id=fabrix&tab_id=08Oy0YRCayw&client_data=eyJydSI6Imh0dHBzOi8vZ2VuYWkuc2VjLnNhbXN1bmcubmV0L2FwaS9hY2NvdW50L2F1dGgvY2FsbGJhY2siLCJydCI6ImNvZGUiLCJzdCI6IlkwZ3BxMkp0RTdUZjE0VkU2NnFwY2JwdSJ9
+Request Method
+GET
+Status Code
+302 Found
+Remote Address
+10.195.107.10:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 302 Found
+Date: Thu, 27 Nov 2025 03:21:12 GMT
+Content-Length: 0
+Connection: keep-alive
+Cache-Control: no-store, must-revalidate, max-age=0
+Location: https://genai.sec.samsung.net/iam-keycloak/realms/fabrix/broker/after-post-broker-login?session_code=2Sp3KxB-8dMndkQobf1AswQ-o8-ethP9HMblI9hhHyo&client_id=fabrix&client_data=eyJydSI6Imh0dHBzOi8vZ2VuYWkuc2VjLnNhbXN1bmcubmV0L2FwaS9hY2NvdW50L2F1dGgvY2FsbGJhY2siLCJydCI6ImNvZGUiLCJzdCI6IlkwZ3BxMkp0RTdUZjE0VkU2NnFwY2JwdSJ9&tab_id=08Oy0YRCayw
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+
+GET /iam-keycloak/realms/fabrix/login-actions/post-broker-login?client_id=fabrix&tab_id=08Oy0YRCayw&client_data=eyJydSI6Imh0dHBzOi8vZ2VuYWkuc2VjLnNhbXN1bmcubmV0L2FwaS9hY2NvdW50L2F1dGgvY2FsbGJhY2siLCJydCI6ImNvZGUiLCJzdCI6IlkwZ3BxMkp0RTdUZjE0VkU2NnFwY2JwdSJ9 HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Cookie: AUTH_SESSION_ID=ODViMzQ0MTAtYTc3OS00M2FlLWI4ZjUtMWUwNzQxOTM2NDU5LnRmRjRzbnRHYnNhX0g2OWVWN0lDWWpzMlhqY0VHOUVLZ0pNOHNXRGZaWUJKTlVvQlNDZlhFNC16Z0haN08taUR3WnF6YWthVk01R08tTW9mZWJmRkl3.fabrix-iam-keycloak-5db5ccc844-2msgm-55590; KC_RESTART=eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..zWtsJNDbRsy4zOsPkp1Htg.Jv_6gTe0Aprma_YORj82-nFuZKHv-eC5PRmgEJ0XGyq17r1SB5aVEV2frTB9QerYtUTXuGhFKzgz8UAD7qwoCumkPH7PcqoWjrXT5L671N4pUpfA9LaNDsjEtn-ntSS_AwRdl1awnl3hDR6pCzY6r4l2cUopL9K8BHR1eptZucYOZ5Fl58Eafo0ZU0wyi0m250ERTujxIAnqe-F8_hPGZeBdYB_CS1IrzC35O2S8HHpgRG5L368W1LiVOVhP-wt-K2l0jLdPG7hHaZx_VH6aM-PkmCL1sxeeTIAdyypKaXiZqEWLuSruK7Olm8aE7ru3zT-ifWbwN4NV42ZL3tp2tan_ozURYkFW2PJHL1K5U9z26wz77WiLFk-IgFVc1hz1q73pD5tI7s_WBfFSrVAxMUxWgoPbt_RjMYmnDjmCv_5BhVFEe53oxg3E1rxswewy56iHaN0z9yuhr8cch7SeY49a_FP5fosKGybPzLMDtK1WdD1gqy0oYHq_eg8JDGdALw-MNWgXD_W2GYIlCOK8GNiJLkc1bLNqLGzY93Tk0zWn_Mvop_IGHdmgP_KwGc4kpWsnOOB8EIKWDeNQz85Nnxv2o51dkHMJ0uXpaIWotpXtqvyhVfBYMFI-jLv8KaDRT7bX49R98CKlovdEcvLXZ0dCVDVh85au_kbgbV8wGxhz2T1GNhdrksCMLLeX4XuFe7vWxx45Zv7MtFkC5I3a6KLNoBSbQKVBmBgJv8SaFVe6EdcyWQHD_wb6fcRTfECLAwMGQdDsBfi6iUZ1EIXtV4A2-XTpDj0vLAJisk0wKHEzThdn29cJ0L4KLP-W4uiAgshTiviWoSWiEFex3wyZEXt3H82lPaK2qu9UHO9LdwA.f3qnphyhWDBPW49MWt83CA; INGRESSCOOKIE=1764212331.095.1662.47196|106b6c0c4dcdde326b101801aa007c6b; rd=https%3A%2F%2Fgenai.sec.samsung.net%2F; connect.sid=s%3ALthPYMA5NWMCDMt5voXDQhz9iBtV0lZR.URrThyarel88YJyTdwCv4rptmuvlVOyDp0cyh%2BoyqwU
+Host: genai.sec.samsung.net
+Pragma: no-cache
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: cross-site
+Upgrade-Insecure-Requests: 1
+
+10. 
+Request URL
+https://genai.sec.samsung.net/iam-keycloak/realms/fabrix/broker/after-post-broker-login?session_code=2Sp3KxB-8dMndkQobf1AswQ-o8-ethP9HMblI9hhHyo&client_id=fabrix&client_data=eyJydSI6Imh0dHBzOi8vZ2VuYWkuc2VjLnNhbXN1bmcubmV0L2FwaS9hY2NvdW50L2F1dGgvY2FsbGJhY2siLCJydCI6ImNvZGUiLCJzdCI6IlkwZ3BxMkp0RTdUZjE0VkU2NnFwY2JwdSJ9&tab_id=08Oy0YRCayw
+Request Method
+GET
+Status Code
+302 Found
+Remote Address
+10.195.107.10:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 302 Found
+Date: Thu, 27 Nov 2025 03:21:12 GMT
+Content-Length: 0
+Connection: keep-alive
+Set-Cookie: KC_RESTART=;Version=1;Path=/iam-keycloak/realms/fabrix/;Max-Age=0
+Set-Cookie: KEYCLOAK_IDENTITY=eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJmN2IyM2VhNS05YzczLTQ4ZmQtYTYxNC0xNTNkZDIwZmZhODMifQ.eyJleHAiOjE3NjQyNDk2NzIsImlhdCI6MTc2NDIxMzY3MiwianRpIjoiZTZiOGRhMWUtMGM0MC00N2ZlLTk2Y2QtYzU1ZWNkZTg1Nzc2IiwiaXNzIjoiaHR0cHM6Ly9nZW5haS5zZWMuc2Ftc3VuZy5uZXQvaWFtLWtleWNsb2FrL3JlYWxtcy9mYWJyaXgiLCJzdWIiOiJkN2Q1ODY0MC1kMTgwLTQ4MjktYmM2Yy00ZmZiYmZmZTllMzUiLCJ0eXAiOiJTZXJpYWxpemVkLUlEIiwic2lkIjoiODViMzQ0MTAtYTc3OS00M2FlLWI4ZjUtMWUwNzQxOTM2NDU5Iiwic3RhdGVfY2hlY2tlciI6IndNaFEyMWtqOW9fbjBBZkZBMXF6NE05ek9MaUd6aVczdGVCa0N0aW1rVFkifQ.vs5Dcmp7m094WEjW9o6QUepgYj_HQnigBUVyOZg6dbDcy64QOhF-BbUurSgxx3Wm2HdwQGTLf2D7CA5vnKOHoA;Version=1;Path=/iam-keycloak/realms/fabrix/;Secure;HttpOnly;SameSite=None
+Set-Cookie: KEYCLOAK_SESSION=6SW8up8MTnPaY2UuUfWs0DVXgZ5qOgQ82wDsgBVLKaM;Version=1;Path=/iam-keycloak/realms/fabrix/;Max-Age=36000;Secure;SameSite=None
+Cache-Control: no-cache
+Location: https://genai.sec.samsung.net/api/account/auth/callback?state=Y0gpq2JtE7Tf14VE66qpcbpu&session_state=85b34410-a779-43ae-b8f5-1e0741936459&iss=https%3A%2F%2Fgenai.sec.samsung.net%2Fiam-keycloak%2Frealms%2Ffabrix&code=6e13e8fc-225d-4331-be70-93d5a258d4d9.85b34410-a779-43ae-b8f5-1e0741936459.787d545b-61c7-4aa7-a997-2a24fae8b153
+Referrer-Policy: no-referrer
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+
+GET /iam-keycloak/realms/fabrix/broker/after-post-broker-login?session_code=2Sp3KxB-8dMndkQobf1AswQ-o8-ethP9HMblI9hhHyo&client_id=fabrix&client_data=eyJydSI6Imh0dHBzOi8vZ2VuYWkuc2VjLnNhbXN1bmcubmV0L2FwaS9hY2NvdW50L2F1dGgvY2FsbGJhY2siLCJydCI6ImNvZGUiLCJzdCI6IlkwZ3BxMkp0RTdUZjE0VkU2NnFwY2JwdSJ9&tab_id=08Oy0YRCayw HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Cookie: AUTH_SESSION_ID=ODViMzQ0MTAtYTc3OS00M2FlLWI4ZjUtMWUwNzQxOTM2NDU5LnRmRjRzbnRHYnNhX0g2OWVWN0lDWWpzMlhqY0VHOUVLZ0pNOHNXRGZaWUJKTlVvQlNDZlhFNC16Z0haN08taUR3WnF6YWthVk01R08tTW9mZWJmRkl3.fabrix-iam-keycloak-5db5ccc844-2msgm-55590; KC_RESTART=eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..zWtsJNDbRsy4zOsPkp1Htg.Jv_6gTe0Aprma_YORj82-nFuZKHv-eC5PRmgEJ0XGyq17r1SB5aVEV2frTB9QerYtUTXuGhFKzgz8UAD7qwoCumkPH7PcqoWjrXT5L671N4pUpfA9LaNDsjEtn-ntSS_AwRdl1awnl3hDR6pCzY6r4l2cUopL9K8BHR1eptZucYOZ5Fl58Eafo0ZU0wyi0m250ERTujxIAnqe-F8_hPGZeBdYB_CS1IrzC35O2S8HHpgRG5L368W1LiVOVhP-wt-K2l0jLdPG7hHaZx_VH6aM-PkmCL1sxeeTIAdyypKaXiZqEWLuSruK7Olm8aE7ru3zT-ifWbwN4NV42ZL3tp2tan_ozURYkFW2PJHL1K5U9z26wz77WiLFk-IgFVc1hz1q73pD5tI7s_WBfFSrVAxMUxWgoPbt_RjMYmnDjmCv_5BhVFEe53oxg3E1rxswewy56iHaN0z9yuhr8cch7SeY49a_FP5fosKGybPzLMDtK1WdD1gqy0oYHq_eg8JDGdALw-MNWgXD_W2GYIlCOK8GNiJLkc1bLNqLGzY93Tk0zWn_Mvop_IGHdmgP_KwGc4kpWsnOOB8EIKWDeNQz85Nnxv2o51dkHMJ0uXpaIWotpXtqvyhVfBYMFI-jLv8KaDRT7bX49R98CKlovdEcvLXZ0dCVDVh85au_kbgbV8wGxhz2T1GNhdrksCMLLeX4XuFe7vWxx45Zv7MtFkC5I3a6KLNoBSbQKVBmBgJv8SaFVe6EdcyWQHD_wb6fcRTfECLAwMGQdDsBfi6iUZ1EIXtV4A2-XTpDj0vLAJisk0wKHEzThdn29cJ0L4KLP-W4uiAgshTiviWoSWiEFex3wyZEXt3H82lPaK2qu9UHO9LdwA.f3qnphyhWDBPW49MWt83CA; INGRESSCOOKIE=1764212331.095.1662.47196|106b6c0c4dcdde326b101801aa007c6b; rd=https%3A%2F%2Fgenai.sec.samsung.net%2F; connect.sid=s%3ALthPYMA5NWMCDMt5voXDQhz9iBtV0lZR.URrThyarel88YJyTdwCv4rptmuvlVOyDp0cyh%2BoyqwU
+Host: genai.sec.samsung.net
+Pragma: no-cache
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: cross-site
+Upgrade-Insecure-Requests: 1
+
+11. 
+Request URL
+https://genai.sec.samsung.net/api/account/auth/callback?state=Y0gpq2JtE7Tf14VE66qpcbpu&session_state=85b34410-a779-43ae-b8f5-1e0741936459&iss=https%3A%2F%2Fgenai.sec.samsung.net%2Fiam-keycloak%2Frealms%2Ffabrix&code=6e13e8fc-225d-4331-be70-93d5a258d4d9.85b34410-a779-43ae-b8f5-1e0741936459.787d545b-61c7-4aa7-a997-2a24fae8b153
+Request Method
+GET
+Status Code
+302 Found
+Remote Address
+10.195.107.10:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 302 Found
+Date: Thu, 27 Nov 2025 03:21:12 GMT
+Content-Type: text/html; charset=utf-8
+Content-Length: 30
+Connection: keep-alive
+X-Powered-By: Express
+Location: /
+Vary: Accept
+Set-Cookie: connect.sid=s%3AdVszEuCwYk4YzmefbWwSUMb2-KzJxNVz.6Rg%2FIBnNISmy2YxzUjT9URZarUIjFg5Muzwlr31%2BKf4; Domain=genai.sec.samsung.net; Path=/; HttpOnly; Secure; SameSite=None
+
+12. now it open the main page (the cookie i can use for the API request in postman)
+Request URL
+https://genai.sec.samsung.net/
+Request Method
+GET
+Status Code
+200 OK
+Remote Address
+10.195.107.10:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+HTTP/1.1 200 OK
+Date: Thu, 27 Nov 2025 03:21:13 GMT
+Content-Type: text/html
+Transfer-Encoding: chunked
+Connection: keep-alive
+Last-Modified: Thu, 30 Oct 2025 17:32:54 GMT
+ETag: W/"6903a146-763"
+Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0
+Content-Encoding: gzip
+
+GET / HTTP/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9
+Cache-Control: no-cache
+Connection: keep-alive
+Cookie: INGRESSCOOKIE=1764212331.095.1662.47196|106b6c0c4dcdde326b101801aa007c6b; rd=https%3A%2F%2Fgenai.sec.samsung.net%2F; connect.sid=s%3AdVszEuCwYk4YzmefbWwSUMb2-KzJxNVz.6Rg%2FIBnNISmy2YxzUjT9URZarUIjFg5Muzwlr31%2BKf4
+Host: genai.sec.samsung.net
+Pragma: no-cache
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: cross-site
+Upgrade-Insecure-Requests: 1
+
+now if we check to https://genai.sec.samsung.net/api/account/auth/session the response will be like this
+{
+    "statusCode": 200,
+    "data": {
+        "id": "d7d58640-d180-4829-bc6c-4ffbbffe9e35",
+        "name": "Riandi Kartiko",
+        "email": "riandi.k@samsung.com",
+        "employeeNumber": "22529012",
+        "companyCode": "C10",
+        "companyName": "삼성전자",
+        "departmentCode": "C10DA14DA140154",
+        "departmentName": "IT & System Innovation P /SEIN-P",
+        "employeeType": "N",
+        "realNameYn": "R",
+        "detail": {
+            "permission": [
+                "read_my_lab_only",
+                "read_asset_approval",
+                "user",
+                "create_asset_openapi_use_request",
+                "delete_lab_asset",
+                "delete_asset_openapi_use_approval",
+                "read_qna",
+                "read_qna_comment",
+                "read_asset_openapi_use_request",
+                "read_users",
+                "update_asset_openapi_use_request",
+                "update_qna",
+                "usr_plus",
+                "read_lab",
+                "create_prompt_template_lab_use_request",
+                "create_prompt_template_lab_replication_request",
+                "create_qna",
+                "read_asset_openapi_settings",
+                "create_lab_asset",
+                "read_asset_openapi",
+                "update_prompt_template_deploy_request",
+                "delete_qna",
+                "create_store_asset_chat_use_request",
+                "deactivate_lab_asset",
+                "update_lab"
+            ]
+        },
+        "tenantId": "4",
+        "tenantCode": "seahq",
+        "tenants": [
+            "4"
+        ],
+        "userEmail": "riandi.k@samsung.com",
+        "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJWWXRLZ3VqckVzdHdIYmJmbWhuVU9LX3otbHYtNEJFcjVocFdpWmNDZTJZIn0.eyJleHAiOjE3NjQyMTcyNzIsImlhdCI6MTc2NDIxMzY3MiwiYXV0aF90aW1lIjoxNzY0MjEzNjcyLCJqdGkiOiI5OTNkZjM2Ny1lMzdlLTQ3NDktYTZmOC0yYzQ3ZWZkOWVhNDYiLCJpc3MiOiJodHRwczovL2dlbmFpLnNlYy5zYW1zdW5nLm5ldC9pYW0ta2V5Y2xvYWsvcmVhbG1zL2ZhYnJpeCIsInN1YiI6ImQ3ZDU4NjQwLWQxODAtNDgyOS1iYzZjLTRmZmJiZmZlOWUzNSIsInR5cCI6IkJlYXJlciIsImF6cCI6ImZhYnJpeCIsInNpZCI6Ijg1YjM0NDEwLWE3NzktNDNhZS1iOGY1LTFlMDc0MTkzNjQ1OSIsImFjciI6IjEiLCJhbGxvd2VkLW9yaWdpbnMiOlsiaHR0cHM6Ly9nZW5haS5zZWMuc2Ftc3VuZy5uZXQvIl0sInJlYWxtX2FjY2VzcyI6eyJyb2xlcyI6WyJkZWZhdWx0LXJvbGVzLWZhYnJpeCIsIm9mZmxpbmVfYWNjZXNzIiwidW1hX2F1dGhvcml6YXRpb24iXX0sInNjb3BlIjoib3BlbmlkIGVtYWlsIHByb2ZpbGUiLCJ0ZW5hbnRfaWQiOiI0IiwiZGVwYXJ0bWVudF9jb2RlIjoiQzEwREExNERBMTQwMTU0IiwidGVuYW50cyI6WyI0Il0sInVzZXJfZW1haWwiOiJyaWFuZGkua0BzYW1zdW5nLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJ1c2VyX25hbWUiOiJSaWFuZGkgS2FydGlrbyIsImRlcGFydG1lbnRfbmFtZSI6IklUICYgU3lzdGVtIElubm92YXRpb24gUCAvU0VJTi1QIiwiY3JlYXRlZF9hdCI6IjE3NTM5NzAxMDIzODkiLCJwZXJtaXNzaW9uIjpbInBlcm1fcmVhZF9teV9sYWJfb25seSIsInBlcm1fcmVhZF9hc3NldF9hcHByb3ZhbCIsInBlcm1fdXNlciIsInBlcm1fY3JlYXRlX2Fzc2V0X29wZW5hcGlfdXNlX3JlcXVlc3QiLCJwZXJtX2RlbGV0ZV9sYWJfYXNzZXQiLCJwZXJtX2RlbGV0ZV9hc3NldF9vcGVuYXBpX3VzZV9hcHByb3ZhbCIsInBlcm1fcmVhZF9xbmEiLCJwZXJtX3JlYWRfcW5hX2NvbW1lbnQiLCJwZXJtX3JlYWRfYXNzZXRfb3BlbmFwaV91c2VfcmVxdWVzdCIsInBlcm1fcmVhZF91c2VycyIsInBlcm1fdXBkYXRlX2Fzc2V0X29wZW5hcGlfdXNlX3JlcXVlc3QiLCJwZXJtX3VwZGF0ZV9xbmEiLCJ1c3JfcGx1cyIsInBlcm1fcmVhZF9sYWIiLCJwZXJtX2NyZWF0ZV9wcm9tcHRfdGVtcGxhdGVfbGFiX3VzZV9yZXF1ZXN0IiwicGVybV9jcmVhdGVfcHJvbXB0X3RlbXBsYXRlX2xhYl9yZXBsaWNhdGlvbl9yZXF1ZXN0IiwicGVybV9jcmVhdGVfcW5hIiwicGVybV9yZWFkX2Fzc2V0X29wZW5hcGlfc2V0dGluZ3MiLCJwZXJtX2NyZWF0ZV9sYWJfYXNzZXQiLCJwZXJtX3JlYWRfYXNzZXRfb3BlbmFwaSIsInBlcm1fdXBkYXRlX3Byb21wdF90ZW1wbGF0ZV9kZXBsb3lfcmVxdWVzdCIsInBlcm1fZGVsZXRlX3FuYSIsInBlcm1fY3JlYXRlX3N0b3JlX2Fzc2V0X2NoYXRfdXNlX3JlcXVlc3QiLCJwZXJtX2RlYWN0aXZhdGVfbGFiX2Fzc2V0IiwicGVybV91cGRhdGVfbGFiIl0sInByZWZlcnJlZF91c2VybmFtZSI6InJpYW5kaS5rQHNhbXN1bmcuY29tIiwiZ2l2ZW5fbmFtZSI6IlJpYW5kaSBLYXJ0aWtvIiwiZW1wbG95ZWVfdHlwZSI6Ik4iLCJyZWFsX25hbWVfeW4iOiJSIiwiY29tcGFueV9uYW1lIjoi7IK87ISx7KCE7J6QIiwibmFtZSI6IlJpYW5kaSBLYXJ0aWtvIiwiZW1wbG95ZWVfbnVtYmVyIjoiMjI1MjkwMTIiLCJlbl9uYW1lIjoiUmlhbmRpIEthcnRpa28iLCJjb21wYW55X2NvZGUiOiJDMTAiLCJpZCI6ImQ3ZDU4NjQwLWQxODAtNDgyOS1iYzZjLTRmZmJiZmZlOWUzNSIsImVtYWlsIjoicmlhbmRpLmtAc2Ftc3VuZy5jb20iLCJ0ZW5hbnRfY29kZSI6InNlYWhxIn0.PepuFjTu76r2SKmv29UrJNTragRbyUb5RCj9TALC65KLfThv5OS2nfpMCks37bv-uv2WbkoN9b_lCIYvj090bb5IPQqFOhlOcKpqkmPQhoosvvnDvRpsng-6RHqWQyDvzTSvF3or-3oZuCj2P6FMtXfyPgPElZjerVHRy3VSannW7iEINfylMKzpJzJnrIjCKEqHj1H4gakqju-re5A-6cLSI8V7XAmW05K9tdEqrd1JhakYSOLGaAFE-1gdJ35yaeQsWBKqgo7Ynm0EBRspTemUmcZd8iIL75C95GDdByLEBJaTev0_TdF5YOeak4GiAU1IHvCql-26Dd4KxoApoQ",
+        "idToken": "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJWWXRLZ3VqckVzdHdIYmJmbWhuVU9LX3otbHYtNEJFcjVocFdpWmNDZTJZIn0.eyJleHAiOjE3NjQyMTcyNzIsImlhdCI6MTc2NDIxMzY3MiwiYXV0aF90aW1lIjoxNzY0MjEzNjcyLCJqdGkiOiJhM2NmMWRiOS0zZjU2LTRmZDEtYmEwOC0zZGZlZDY0ZGQzNjMiLCJpc3MiOiJodHRwczovL2dlbmFpLnNlYy5zYW1zdW5nLm5ldC9pYW0ta2V5Y2xvYWsvcmVhbG1zL2ZhYnJpeCIsImF1ZCI6ImZhYnJpeCIsInN1YiI6ImQ3ZDU4NjQwLWQxODAtNDgyOS1iYzZjLTRmZmJiZmZlOWUzNSIsInR5cCI6IklEIiwiYXpwIjoiZmFicml4Iiwic2lkIjoiODViMzQ0MTAtYTc3OS00M2FlLWI4ZjUtMWUwNzQxOTM2NDU5IiwiYXRfaGFzaCI6IkZocGNTTWlkN1pMVFdVUDRjNTZrYnciLCJhY3IiOiIxIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInVzZXJfbmFtZSI6IlJpYW5kaSBLYXJ0aWtvIiwibmFtZSI6IlJpYW5kaSBLYXJ0aWtvIiwicHJlZmVycmVkX3VzZXJuYW1lIjoicmlhbmRpLmtAc2Ftc3VuZy5jb20iLCJnaXZlbl9uYW1lIjoiUmlhbmRpIEthcnRpa28iLCJlbWFpbCI6InJpYW5kaS5rQHNhbXN1bmcuY29tIn0.Qm9E9du1HdLUZ-Gfs8TXqpjOGdgJDsxgsnLet6RzmvvaX6n0E39Q8Esaco5IZjlLCdmQimZpFx5H-pIs442GQr7-5DyvJ-r73JOKjJbha__ewbzVMSeQsMI-yVwJlJdh9dG003dR3ODTXi7Ql6kXKHh5DuJ2vMkG5cGdNCMVq_M9jdafmhgsI5xzXWwcnz6YomEUpsgQqW-rHfmHinHeHFgDqn-7vJ_aObPAS76TGPMdT6GJPvbLE-97mZ5Cco-mluv4xefvdzvl7gJRxhybmdDSifKymbCo50v1TnkHdI9OSYkX4C_YU0RBPOdNyGQMS89a7Xx3nC0d-UeCJQLSzA",
+        "loginDate": "2025-11-27T03:21:12.959Z"
+    }
+}
+
+
+now in postman / insomnia i set the cookie
+
+then the request in insomnia
+
+1. first when to start a chat session / conversation
+POST
+https://genai.sec.samsung.net/api/chat/v1/chats
+Request Body
+{
+	"title": "Translate",
+	"type": "chat",
+	"clientType": "portal",
+	"fileUuids": []
+}
+Response
+{
+	"guid": "019ac35f-5ba1-7c8e-b9b4-ef749fe18a68",
+	"title": "Translate",
+	"modifiedAt": "2025-11-27T12:33:17.856155+09:00",
+	"type": "chat",
+	"bookmark": false,
+	"agentName": null,
+	"agentGuid": null
+}
+
+2. then to send a message to the chat session / conversation
+POST
+https://genai.sec.samsung.net/api/chat/v1/messages
+Request Body
+{
+	"chatGuid": "019ac35f-5ba1-7c8e-b9b4-ef749fe18a68",
+	"messageType": "chat",
+	"content": "You are a professional {targetLang} native translator who needs to fluently translate text into {targetLang}.\n\n## Translation Rules\n1. Output only the translated content, without explanations or additional content (such as \"Here's the translation:\" or \"Translation as follows:\")\n2. The returned translation must maintain exactly the same number of paragraphs and format as the original text.\n3. If the text contains HTML tags, consider where the tags should be placed in the translation while maintaining fluency.\n4. For content that should not be translated (such as proper nouns, code, etc.), keep the original text.\n\nTranslate to {id-ID}:\n<p style=\"box-sizing:content-box;font-family:굴림, sans-serif;text-size-adjust:none;color:#000000;font-size:12pt;vertical-align:top;display:block;font-weight:400;orphans:2;margin-left:10px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;background-color:#ffffff;background-image:none;background-position:0% 0%;background-repeat:repeat;background-attachment:scroll;\"><span style=\"box-sizing:content-box; text-size-adjust:none; background-color:#ffffff; margin-left:0px; margin-bottom:0px; margin-right:0px; margin-top:0px; padding-left:0px; padding-bottom:0px; padding-right:0px; padding-top:0px;\"><span style=\"box-sizing:content-box;text-size-adjust:none;font-weight:bold;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\"><span style=\"box-sizing:content-box;font-family:바탕체, serif;text-size-adjust:none;color:black;letter-spacing:-0.4pt;background-color:#ffffff;background-image:none;background-position:0% 0%;background-repeat:repeat;background-attachment:scroll;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">1.&nbsp;</span></span><span style=\"box-sizing:content-box;text-size-adjust:none;font-weight:bold;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\"><span style=\"box-sizing:content-box;font-family:바탕체, serif;text-size-adjust:none;color:black;letter-spacing:-0.4pt;background-color:#ffffff;background-image:none;background-position:0% 0%;background-repeat:repeat;background-attachment:scroll;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">보안<span style=\"box-sizing:content-box;text-size-adjust:none;background-color:#ffffff;background-image:none;background-position:0% 0%;background-repeat:repeat;background-attachment:scroll;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">패치</span><span style=\"box-sizing:content-box;text-size-adjust:none;background-color:#ffffff;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">&nbsp;</span>정보는 첨부의<span style=\"box-sizing:content-box;text-size-adjust:none;background-color:#ffffff;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\"><span style=\"box-sizing:content-box;text-size-adjust:none;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">&nbsp;</span>cve_info_xx.xlsx<span style=\"box-sizing:content-box;text-size-adjust:none;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">&nbsp;</span></span>파일로 공유드립니다<span style=\"box-sizing:content-box;text-size-adjust:none;background-color:#ffffff;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">.</span></span></span></span></p>\n ",
+	"attributes": {
+		"plugins": [],
+		"mcpServers": [],
+		"knowledge": [],
+		"embeddingKnowledge": [],
+		"codeInterpreters": false
+	},
+	"fileUuids": []
+}
+Response 
+{
+	"id": 11977825,
+	"chatId": 1545465,
+	"guid": "019ac2fc-c8d7-7642-baff-f3e91399fedd",
+	"chatGuid": "019ac2e6-d779-7477-8c5f-c4767c9268a3",
+	"content": "SE::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",
+	"createdAt": "2025-11-27T10:45:37.748955+09:00",
+	"creator": "d7d58640-d180-4829-bc6c-4ffbbffe9e35"
+}
+
+
+3. https://genai.sec.samsung.net/api/chat/v1/messages-response
+POST
+in header
+Date: Thu, 27 Nov 2025 03:38:44 GMT
+Content-Type: text/event-stream; charset=utf-8
+Transfer-Encoding: chunked
+Connection: keep-alive
+cache-control: no-cache
+Cache-Control: no-store,no-cache
+
+Request Body
+{
+	"chatGuid": "019ac2e6-d779-7477-8c5f-c4767c9268a38",
+	"messageGuid": "019ac2fc-c8d7-7642-baff-f3e91399fedd",
+	"locale": "en",
+	"modelGuids": [
+		"0198f11e-ceab-71c3-8fb1-d077d6331843"
+	],
+	"isArtifact": false
+}
+data: {"id":11990762,"parent_message_id":null,"chat_id":1545465,"guid":"019ac364-56bc-72ee-afcb-f7c2fc269862","chat_guid":"019ac2e6-d779-7477-8c5f-c4767c9268a3","parent_message_guid":"019ac2fc-c8d7-7642-baff-f3e91399fedd","user_id":"d7d58640-d180-4829-bc6c-4ffbbffe9e35","model_id":null,"model_type":"GPT-OSS","content":"","reasoning_content":null,"processing_content":[],"content_references":[],"content_created_by":null,"created_at":null,"truncated":null,"finish_reason":null,"filter_block_reason":null,"status":"SUCCESS","response_code":null,"plugins":[],"files":null,"orchestrator_type":null,"parent_message_created_at":"2025-11-27T10:45:37.748955+09:00","event_status":"CHUNK"}
+
+data: {"id":11990762,"parent_message_id":null,"chat_id":1545465,"guid":"019ac364-56bc-72ee-afcb-f7c2fc269862","chat_guid":"019ac2e6-d779-7477-8c5f-c4767c9268a3","parent_message_guid":"019ac2fc-c8d7-7642-baff-f3e91399fedd","user_id":"d7d58640-d180-4829-bc6c-4ffbbffe9e35","model_id":null,"model_type":"GPT-OSS","content":null,"reasoning_content":null,"processing_content":[{"type":null,"name":null,"asset_ids":null,"event_status":"REQUEST_ANALYSIS","result":null,"ask_back":null,"error":null}],"content_references":[],"content_created_by":null,"created_at":null,"truncated":null,"finish_reason":null,"filter_block_reason":{"ko":null,"en":null,"policy_id":null,"message":null,"result_code":"FR-200","filter_log_id":null},"status":"SUCCESS","response_code":null,"plugins":[],"files":null,"orchestrator_type":null,"parent_message_created_at":"2025-11-27T10:45:37.748955+09:00","event_status":"REQUEST_ANALYSIS"}
+
+data: {"id":11990762,"parent_message_id":null,"chat_id":1545465,"guid":"019ac364-56bc-72ee-afcb-f7c2fc269862","chat_guid":"019ac2e6-d779-7477-8c5f-c4767c9268a3","parent_message_guid":"019ac2fc-c8d7-7642-baff-f3e91399fedd","user_id":"d7d58640-d180-4829-bc6c-4ffbbffe9e35","model_id":null,"model_type":"GPT-OSS","content":null,"reasoning_content":null,"processing_content":[{"type":null,"name":null,"asset_ids":null,"event_status":"FINAL_ANSWER","result":null,"ask_back":null,"error":null}],"content_references":[],"content_created_by":null,"created_at":null,"truncated":null,"finish_reason":null,"filter_block_reason":{"ko":null,"en":null,"policy_id":"None","message":"The content was passed","result_code":"FR-200","filter_log_id":"None"},"status":"SUCCESS","response_code":null,"plugins":[],"files":null,"orchestrator_type":null,"parent_message_created_at":"2025-11-27T10:45:37.748955+09:00","event_status":"FINAL_ANSWER"}
+
+data: {"id":11990762,"parent_message_id":null,"chat_id":1545465,"guid":"019ac364-56bc-72ee-afcb-f7c2fc269862","chat_guid":"019ac2e6-d779-7477-8c5f-c4767c9268a3","parent_message_guid":"019ac2fc-c8d7-7642-baff-f3e91399fedd","user_id":"d7d58640-d180-4829-bc6c-4ffbbffe9e35","model_id":null,"model_type":"GPT-OSS","content":"The","reasoning_content":"The","processing_content":[],"content_references":[],"content_created_by":null,"created_at":null,"truncated":null,"finish_reason":null,"filter_block_reason":{"ko":null,"en":null,"policy_id":"None","message":"The content was passed","result_code":"FR-200","filter_log_id":"None"},"status":"SUCCESS","response_code":null,"plugins":[],"files":null,"orchestrator_type":null,"parent_message_created_at":"2025-11-27T10:45:37.748955+09:00","event_status":"THINK"}
+
+data: {"id":11990762,"parent_message_id":null,"chat_id":1545465,"guid":"019ac364-56bc-72ee-afcb-f7c2fc269862","chat_guid":"019ac2e6-d779-7477-8c5f-c4767c9268a3","parent_message_guid":"019ac2fc-c8d7-7642-baff-f3e91399fedd","user_id":"d7d58640-d180-4829-bc6c-4ffbbffe9e35","model_id":null,"model_type":"GPT-OSS","content":" user","reasoning_content":" user","processing_content":[],"content_references":[],"content_created_by":null,"created_at":null,"truncated":null,"finish_reason":null,"filter_block_reason":{"ko":null,"en":null,"policy_id":"None","message":"The content was passed","result_code":"FR-200","filter_log_id":"None"},"status":"SUCCESS","response_code":null,"plugins":[],"files":null,"orchestrator_type":null,"parent_message_created_at":"2025-11-27T10:45:37.748955+09:00","event_status":"THINK"}
+
+data: {"id":11990762,"parent_message_id":null,"chat_id":1545465,"guid":"019ac364-56bc-72ee-afcb-f7c2fc269862","chat_guid":"019ac2e6-d779-7477-8c5f-c4767c9268a3","parent_message_guid":"019ac2fc-c8d7-7642-baff-f3e91399fedd","user_id":"d7d58640-d180-4829-bc6c-4ffbbffe9e35","model_id":null,"model_type":"GPT-OSS","content":" wants","reasoning_content":" wants","processing_content":[],"content_references":[],"content_created_by":null,"created_at":null,"truncated":null,"finish_reason":null,"filter_block_reason":{"ko":null,"en":null,"policy_id":"None","message":"The content was passed","result_code":"FR-200","filter_log_id":"None"},"status":"SUCCESS","response_code":null,"plugins":[],"files":null,"orchestrator_type":null,"parent_message_created_at":"2025-11-27T10:45:37.748955+09:00","event_status":"THINK"}
+
+data: {"id":11990762,"parent_message_id":null,"chat_id":1545465,"guid":"019ac364-56bc-72ee-afcb-f7c2fc269862","chat_guid":"019ac2e6-d779-7477-8c5f-c4767c9268a3","parent_message_guid":"019ac2fc-c8d7-7642-baff-f3e91399fedd","user_id":"d7d58640-d180-4829-bc6c-4ffbbffe9e35","model_id":null,"model_type":"GPT-OSS","content":" translation","reasoning_content":" translation","processing_content":[],"content_references":[],"content_created_by":null,"created_at":null,"truncated":null,"finish_reason":null,"filter_block_reason":{"ko":null,"en":null,"policy_id":"None","message":"The content was passed","result_code":"FR-200","filter_log_id":"None"},"status":"SUCCESS","response_code":null,"plugins":[],"files":null,"orchestrator_type":null,"parent_message_created_at":"2025-11-27T10:45:37.748955+09:00","event_status":"THINK"}
+
+data: {"id":11990762,"parent_message_id":null,"chat_id":1545465,"guid":"019ac364-56bc-72ee-afcb-f7c2fc269862","chat_guid":"019ac2e6-d779-7477-8c5f-c4767c9268a3","parent_message_guid":"019ac2fc-c8d7-7642-baff-f3e91399fedd","user_id":"d7d58640-d180-4829-bc6c-4ffbbffe9e35","model_id":null,"model_type":"GPT-OSS","content":" to","reasoning_content":" to","processing_content":[],"content_references":[],"content_created_by":null,"created_at":null,"truncated":null,"finish_reason":null,"filter_block_reason":{"ko":null,"en":null,"policy_id":"None","message":"The content was passed","result_code":"FR-200","filter_log_id":"None"},"status":"SUCCESS","response_code":null,"plugins":[],"files":null,"orchestrator_type":null,"parent_message_created_at":"2025-11-27T10:45:37.748955+09:00","event_status":"THINK"}
+... and many more
+
+4. finally to get the full response message
+https://genai.sec.samsung.net/api/chat/v1/messages/019ac364-56bc-72ee-afcb-f7c2fc269862
+GET
+Response
+{
+	"guid": "019ac364-56bc-72ee-afcb-f7c2fc269862",
+	"parentMessageGuid": "019ac2fc-c8d7-7642-baff-f3e91399fedd",
+	"chatGuid": "019ac2e6-d779-7477-8c5f-c4767c9268a3",
+	"userId": "d7d58640-d180-4829-bc6c-4ffbbffe9e35",
+	"modelId": 343,
+	"modelGuid": "0198f11e-ceab-71c3-8fb1-d077d6331843",
+	"modelType": "GPT-OSS",
+	"type": "chat",
+	"role": "assistant",
+	"content": "<p style=\"box-sizing:content-box;font-family:굴림, sans-serif;text-size-adjust:none;color:#000000;font-size:12pt;vertical-align:top;display:block;font-weight:400;orphans:2;margin-left:10px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;background-color:#ffffff;background-image:none;background-position:0% 0%;background-repeat:repeat;background-attachment:scroll;\"><span style=\"box-sizing:content-box; text-size-adjust:none; background-color:#ffffff; margin-left:0px; margin-bottom:0px; margin-right:0px; margin-top:0px; padding-left:0px; padding-bottom:0px; padding-right:0px; padding-top:0px;\"><span style=\"box-sizing:content-box;text-size-adjust:none;font-weight:bold;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\"><span style=\"box-sizing:content-box;font-family:바탕체, serif;text-size-adjust:none;color:black;letter-spacing:-0.4pt;background-color:#ffffff;background-image:none;background-position:0% 0%;background-repeat:repeat;background-attachment:scroll;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">1.&nbsp;</span></span><span style=\"box-sizing:content-box;text-size-adjust:none;font-weight:bold;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\"><span style=\"box-sizing:content-box;font-family:바탕체, serif;text-size-adjust:none;color:black;letter-spacing:-0.4pt;background-color:#ffffff;background-image:none;background-position:0% 0%;background-repeat:repeat;background-attachment:scroll;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">Informasi&nbsp;patch&nbsp;keamanan&nbsp;dibagikan&nbsp;dalam&nbsp;file&nbsp;<span style=\"box-sizing:content-box;text-size-adjust:none;background-color:#ffffff;background-image:none;background-position:0% 0%;background-repeat:repeat;background-attachment:scroll;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">cve_info_xx.xlsx</span><span style=\"box-sizing:content-box;text-size-adjust:none;background-color:#ffffff;margin-left:0px;margin-bottom:0px;margin-right:0px;margin-top:0px;padding-left:0px;padding-bottom:0px;padding-right:0px;padding-top:0px;\">&nbsp;</span>yang&nbsp;terlampir.</span></span></span></p>",
+	"reasoningContent": "The user wants translation to {id-ID}. The placeholder {id-ID} likely means Indonesian language. They provided HTML with inline styles. Need to keep same structure and paragraphs count. It's a single paragraph <p> ... </p>. Need to translate the Korean text to Indonesian while preserving HTML tags and inline styles. The Korean text:\n\n\"1. 보안패치 정보는 첨부의 cve_info_xx.xlsx 파일로 공유드립니다.\"\n\nBut there are extra spaces and spans. Let's extract the visible text:\n\nInside <span> ... \"1.\" then \"보안패치 정보는 첨부의 cve_info_xx.xlsx 파일로 공유드립니다.\"\n\nAlso there is a non-breaking space after \"패치\". So final translation: \"1. Informasi patch keamanan dibagikan dalam file cve_info_xx.xlsx yang terlampir.\"\n\nWe need to keep same HTML structure. So replace Korean words with Indonesian while preserving tags. Ensure not translate the file name \"cve_info_xx.xlsx\". Keep it unchanged.\n\nThus produce same <p> with same style attributes, just inner text changed.\n\nWe should not output explanations. Just the translated HTML.\n\nLet's craft output: keep the whole tag as is, replace Korean characters accordingly. Ensure we keep <span> tags positions.\n\nThe original structure: many nested spans. We'll keep them but replace content inside the innermost text nodes.\n\nSimplify: Keep same tags, just replace the Korean text.\n\nThus final answer will be the HTML block.\n\n",
+	"contentReferences": [],
+	"processingContent": [
+		{
+			"type": null,
+			"name": null,
+			"assetIds": null,
+			"eventStatus": "REQUEST_ANALYSIS",
+			"result": null,
+			"askBack": null,
+			"error": null
+		},
+		{
+			"type": null,
+			"name": null,
+			"assetIds": null,
+			"eventStatus": "FINAL_ANSWER",
+			"result": null,
+			"askBack": null,
+			"error": null
+		}
+	],
+	"createdAt": "2025-11-27T12:38:44.283606+09:00",
+	"modifiedAt": "2025-11-27T12:38:52.269497+09:00",
+	"creator": "d7d58640-d180-4829-bc6c-4ffbbffe9e35",
+	"modifier": "d7d58640-d180-4829-bc6c-4ffbbffe9e35",
+	"modelInfos": [
+		{
+			"modelId": 343,
+			"modelGuid": "0198f11e-ceab-71c3-8fb1-d077d6331843",
+			"modelName": "GaussO Flash"
+		}
+	],
+	"recommendQueries": [],
+	"rating": null,
+	"comment": null,
+	"harmDanger": null,
+	"expectedAnswer": null,
+	"filterBlockReason": {
+		"ko": null,
+		"en": null,
+		"policyId": "None",
+		"message": "The content was passed",
+		"resultCode": "FR-200",
+		"filterLogId": "None"
+	},
+	"status": "SUCCESS",
+	"responseCode": "R20000",
+	"truncated": false,
+	"finishReason": null,
+	"report": false,
+	"templateId": null,
+	"templateTitle": null,
+	"multiTemplateType": null,
+	"files": [],
+	"plugins": [],
+	"mcpServers": null,
+	"references": [],
+	"actions": [],
+	"catalogs": [],
+	"assistantId": null,
+	"assistantName": null,
+	"orchestratorType": null,
+	"orchestrationPrompt": null,
+	"artifact": null
+}
+

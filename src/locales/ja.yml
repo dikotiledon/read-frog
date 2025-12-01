@@ -109,12 +109,24 @@ options:
         replicate: 専門的な翻訳タスクのための多様なオープンソースモデルへのアクセス
         perplexity: 文脈的翻訳と読解支援のためのリアルタイム知識強化AI
         vercel: ウェブコンテンツの翻訳と分析に最適化されたAIモデル
+        genai: Samsung社内のGenAIポータル。ブラウザのSSOログインが必要で、APIキーは不要です
     apiKey:
       showAPIKey: APIキーを表示
     howToConfigure: 設定方法は?
     testConnection:
       button: 接続テスト
       testing: テスト中...
+    genaiSession:
+      title: Samsung GenAI session
+      description: This provider reuses your Samsung SSO browser session instead of an API key.
+      refresh: Refresh session
+      refreshing: Opening Samsung GenAI to refresh your session...
+      ready: Samsung GenAI session is ready.
+      failed: Failed to refresh Samsung GenAI session.
+      openPortal: Open GenAI portal
+      openFailed: Could not open Samsung GenAI in a new tab.
+      lastChecked: Last checked $1
+      notChecked: Session has not been checked yet。
   general:
     title: 一般
     readConfig:

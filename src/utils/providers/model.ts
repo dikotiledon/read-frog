@@ -89,6 +89,10 @@ async function getLanguageModelById(providerId: string, modelType: 'read' | 'tra
     throw new Error(`Provider ${providerId} not found`)
   }
 
+  if (providerConfig.provider === 'genai') {
+    throw new Error('GenAI provider does not expose AI SDK models')
+  }
+
   const customHeaders = CUSTOM_HEADER_MAP[providerConfig.provider]
 
   const provider = isCustomLLMProvider(providerConfig.provider)

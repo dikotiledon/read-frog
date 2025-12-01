@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/shadcn/button'
 import { Separator } from '@/components/shadcn/separator'
-import { isAPIProviderConfig, isNonAPIProvider, isReadProvider, isTranslateProvider } from '@/types/config/provider'
+import { isAPIProviderConfig, isGenAIProviderConfig, isNonAPIProvider, isReadProvider, isTranslateProvider, providerRequiresAPIKey } from '@/types/config/provider'
 import { configFieldsAtomMap } from '@/utils/atoms/config'
 import { providerConfigAtom } from '@/utils/atoms/provider'
 import { getReadProvidersConfig, getTranslateProvidersConfig, getTTSProvidersConfig } from '@/utils/config/helpers'
@@ -19,6 +19,7 @@ import { DefaultReadProviderSelector, DefaultTranslateProviderSelector } from '.
 import { formOpts, useAppForm } from './form'
 import { ReadModelSelector } from './read-model-selector'
 import { TranslateModelSelector } from './translate-model-selector'
+import { GenAISessionActions } from './genai-session-actions'
 
 export function ProviderConfigForm() {
   const [selectedProviderId, setSelectedProviderId] = useAtom(selectedProviderIdAtom)
@@ -43,6 +44,7 @@ export function ProviderConfigForm() {
   const providerType = useStore(form.store, state => state.values.provider)
   const isReadProviderName = isReadProvider(providerType)
   const isTranslateProviderName = isTranslateProvider(providerType)
+  const shouldShowApiKeyField = providerType ? providerRequiresAPIKey(providerType) : false
 
   // Reset form when selectedProviderId changes
   useEffect(() => {
@@ -120,8 +122,13 @@ export function ProviderConfigForm() {
             {field => <field.InputField formForSubmit={form} label={i18n.t('options.apiProviders.form.fields.description')} />}
           </form.AppField>
 
-          <APIKeyField form={form} />
+          {shouldShowApiKeyField && <APIKeyField form={form} />}
           <BaseURLField form={form} />
+          {providerType === 'genai'
+            && isGenAIProviderConfig(providerConfig)
+            && (
+              <GenAISessionActions providerConfig={providerConfig} />
+            )}
           {isTranslateProviderName && (
             <>
               <Separator className="my-2" />

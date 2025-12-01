@@ -11,6 +11,11 @@ import { getLobeIconsCDNUrlFn } from '../logo'
 import { WEBSITE_URL } from './url'
 
 export const DEFAULT_READ_MODELS: ReadModels = {
+  genai: {
+    model: 'gauss-flash',
+    isCustomModel: false,
+    customModel: null,
+  },
   siliconflow: {
     model: 'Qwen/Qwen3-Next-80B-A3B-Instruct',
     isCustomModel: false,
@@ -124,6 +129,11 @@ export const DEFAULT_READ_MODELS: ReadModels = {
 }
 
 export const DEFAULT_TRANSLATE_MODELS: TranslateLLMModels = {
+  genai: {
+    model: 'gauss-flash',
+    isCustomModel: false,
+    customModel: null,
+  },
   siliconflow: {
     model: 'Qwen/Qwen3-Next-80B-A3B-Instruct',
     isCustomModel: false,
@@ -257,6 +267,11 @@ export const PROVIDER_ITEMS: Record<AllProviderTypes, { logo: (theme: Theme) => 
       logo: getLobeIconsCDNUrlFn('siliconcloud-color'),
       name: 'SiliconFlow',
       website: 'https://siliconflow.cn/',
+    },
+    genai: {
+      logo: () => customProviderLogo,
+      name: 'Samsung GenAI',
+      website: 'https://genai.sec.samsung.net/',
     },
     ai302: {
       logo: getLobeIconsCDNUrlFn('ai302-color'),
@@ -400,6 +415,18 @@ export const DEFAULT_PROVIDER_CONFIG = {
     models: {
       read: DEFAULT_READ_MODELS.tensdaq,
       translate: DEFAULT_TRANSLATE_MODELS.tensdaq,
+    },
+  },
+  genai: {
+    id: 'genai-default',
+    name: PROVIDER_ITEMS.genai.name,
+    description: i18n.t('options.apiProviders.providers.description.genai'),
+    enabled: false,
+    provider: 'genai',
+    baseURL: 'https://genai.sec.samsung.net',
+    models: {
+      read: DEFAULT_READ_MODELS.genai,
+      translate: DEFAULT_TRANSLATE_MODELS.genai,
     },
   },
   ai302: {
@@ -638,6 +665,7 @@ export const DEFAULT_PROVIDER_CONFIG_LIST: ProvidersConfig = [
   DEFAULT_PROVIDER_CONFIG.google,
   DEFAULT_PROVIDER_CONFIG.microsoft,
   DEFAULT_PROVIDER_CONFIG.openai,
+  DEFAULT_PROVIDER_CONFIG.genai,
   DEFAULT_PROVIDER_CONFIG.tensdaq,
   DEFAULT_PROVIDER_CONFIG.ai302,
   // DEFAULT_PROVIDER_CONFIG.deepseek,
