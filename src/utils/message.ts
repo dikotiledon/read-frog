@@ -8,6 +8,8 @@ import { defineExtensionMessaging } from '@webext-core/messaging'
 interface ProtocolMap {
   // navigation
   openPage: (data: { url: string, active?: boolean }) => void
+  openExtensionTab: (data: { url: string, active?: boolean }) => Promise<number | undefined>
+  closeExtensionTab: (data: { tabId: number }) => Promise<void>
   openOptionsPage: () => void
   // config
   getInitialConfig: () => Config | null

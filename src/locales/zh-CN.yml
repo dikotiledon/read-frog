@@ -200,6 +200,15 @@ options:
       rate:
         title: 每秒平均请求数量
         description: 平均每秒的请求数量，不过允许配置最大突发请求数来短暂发送超量请求。
+        timeoutMs:
+          title: 请求超时（毫秒）
+          description: 在请求失败前等待翻译响应的最长时间
+        maxRetries:
+          title: 重试次数
+          description: 在显示错误之前对失败的翻译请求进行重试的次数
+        baseRetryDelayMs:
+          title: 基础重试延迟（毫秒）
+          description: 每次重试之间的初始等待时间；每次尝试都会翻倍以避免突发
     batchQueueConfig:
       title: 批量翻译
       description: 配置批量翻译时的字符数限制和最大段落数量（仅对大语言模型翻译有效）

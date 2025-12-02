@@ -200,6 +200,15 @@ options:
       rate:
         title: Average Requests Per Second
         description: Average requests per second, but allows configuring a maximum burst count to temporarily send excess requests
+      timeoutMs:
+        title: Request Timeout (ms)
+        description: Maximum time to wait for a translation response before failing the request
+      maxRetries:
+        title: Retry Attempts
+        description: Number of times to retry a failed translation before surfacing the error
+      baseRetryDelayMs:
+        title: Base Retry Delay (ms)
+        description: Initial wait time between retries; doubles with each attempt to prevent bursts
     batchQueueConfig:
       title: Batch Translation
       description: Configure character limits and maximum paragraph count for batch translation (only effective for LLM translation)

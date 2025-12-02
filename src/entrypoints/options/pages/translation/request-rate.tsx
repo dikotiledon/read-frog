@@ -6,7 +6,13 @@ import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from '@
 import { Input } from '@/components/shadcn/input'
 import { requestQueueConfigSchema } from '@/types/config/translate'
 import { configFieldsAtomMap } from '@/utils/atoms/config'
-import { MIN_TRANSLATE_CAPACITY, MIN_TRANSLATE_RATE } from '@/utils/constants/translate'
+import {
+  MAX_TRANSLATE_RETRIES,
+  MIN_TRANSLATE_CAPACITY,
+  MIN_TRANSLATE_RATE,
+  MIN_TRANSLATE_RETRY_DELAY_MS,
+  MIN_TRANSLATE_TIMEOUT_MS,
+} from '@/utils/constants/translate'
 import { sendMessage } from '@/utils/message'
 import { ConfigCard } from '../../components/config-card'
 
@@ -27,6 +33,9 @@ export function RequestRate() {
       <FieldGroup>
         <TranslateNumberSelector property="capacity" />
         <TranslateNumberSelector property="rate" />
+        <TranslateNumberSelector property="timeoutMs" />
+        <TranslateNumberSelector property="maxRetries" />
+        <TranslateNumberSelector property="baseRetryDelayMs" />
       </FieldGroup>
     </ConfigCard>
   )
@@ -41,11 +50,30 @@ const propertyInfo = {
     label: i18n.t('options.translation.requestQueueConfig.rate.title'),
     description: i18n.t('options.translation.requestQueueConfig.rate.description'),
   },
-}
+  timeoutMs: {
+    label: i18n.t('options.translation.requestQueueConfig.timeoutMs.title'),
+    description: i18n.t('options.translation.requestQueueConfig.timeoutMs.description'),
+  },
+  maxRetries: {
+    label: i18n.t('options.translation.requestQueueConfig.maxRetries.title'),
+    description: i18n.t('options.translation.requestQueueConfig.maxRetries.description'),
+  },
+  baseRetryDelayMs: {
+    label: i18n.t('options.translation.requestQueueConfig.baseRetryDelayMs.title'),
+    description: i18n.t('options.translation.requestQueueConfig.baseRetryDelayMs.description'),
+  },
+} satisfies Record<KeyOfRequestQueueConfig, { label: string, description: string }>
 
 const propertyMinAllowedValue = {
   capacity: MIN_TRANSLATE_CAPACITY,
   rate: MIN_TRANSLATE_RATE,
+  timeoutMs: MIN_TRANSLATE_TIMEOUT_MS,
+  maxRetries: 0,
+  baseRetryDelayMs: MIN_TRANSLATE_RETRY_DELAY_MS,
+} satisfies Record<KeyOfRequestQueueConfig, number>
+
+const propertyMaxAllowedValue: Partial<Record<KeyOfRequestQueueConfig, number>> = {
+  maxRetries: MAX_TRANSLATE_RETRIES,
 }
 
 function TranslateNumberSelector({ property }: { property: KeyOfRequestQueueConfig }) {
@@ -54,6 +82,7 @@ function TranslateNumberSelector({ property }: { property: KeyOfRequestQueueConf
 
   const currentConfigValue = requestQueueConfig[property]
   const minAllowedValue = propertyMinAllowedValue[property]
+  const maxAllowedValue = propertyMaxAllowedValue[property]
 
   const info = propertyInfo[property]
 
@@ -72,6 +101,7 @@ function TranslateNumberSelector({ property }: { property: KeyOfRequestQueueConf
         className="w-40 shrink-0"
         type="number"
         min={minAllowedValue}
+        max={maxAllowedValue}
         value={currentConfigValue}
         onChange={(e) => {
           const newConfigValue = Number(e.target.value)

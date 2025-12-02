@@ -1,0 +1,91 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { GenAIProviderConfig } from '@/types/config/provider'
+import { GENAI_CHAT_IDLE_TTL_MS } from '../constants'
+import { acquireGenAIChat, __private__ } from '../chat-pool'
+
+const baseProviderConfig: GenAIProviderConfig = {
+  id: 'genai-default',
+  name: 'Samsung GenAI',
+  enabled: true,
+  provider: 'genai',
+  baseURL: 'https://genai.sec.samsung.net',
+  description: 'test',
+  models: {
+    read: {
+      model: 'GPT-OSS',
+      isCustomModel: false,
+      customModel: null,
+    },
+    translate: {
+      model: 'GPT-OSS',
+      isCustomModel: false,
+      customModel: null,
+    },
+  },
+}
+
+describe('acquireGenAIChat', () => {
+  afterEach(() => {
+    __private__.clearPoolsForTest()
+    vi.useRealTimers()
+  })
+
+  it('reuses the same chat for sequential acquisitions', async () => {
+    const createChat = vi.fn().mockResolvedValue('chat-1')
+
+    const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    leaseA.release()
+
+    const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    leaseB.release()
+
+    expect(createChat).toHaveBeenCalledTimes(1)
+    expect(leaseB.chatGuid).toBe('chat-1')
+  })
+
+  it('creates a new chat after invalidation', async () => {
+    const createChat = vi.fn().mockResolvedValueOnce('chat-1').mockResolvedValueOnce('chat-2')
+
+    const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    leaseA.invalidate()
+
+    const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    leaseB.release()
+
+    expect(createChat).toHaveBeenCalledTimes(2)
+    expect(leaseB.chatGuid).toBe('chat-2')
+  })
+
+  it('evicts idle chats after the TTL elapses', async () => {
+    vi.useFakeTimers()
+    const createChat = vi.fn().mockResolvedValueOnce('chat-ttl-1').mockResolvedValueOnce('chat-ttl-2')
+
+    const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    leaseA.release()
+
+    await vi.advanceTimersByTimeAsync(GENAI_CHAT_IDLE_TTL_MS + 1)
+
+    const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    leaseB.release()
+
+    expect(createChat).toHaveBeenCalledTimes(2)
+    expect(leaseB.chatGuid).toBe('chat-ttl-2')
+  })
+
+  it('tracks parent message guid across leases and resets on invalidation', async () => {
+    const createChat = vi.fn().mockResolvedValue('chat-parent')
+
+    const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    expect(leaseA.parentMessageGuid).toBeNull()
+    leaseA.setParentMessageGuid('assistant-1')
+    leaseA.release()
+
+    const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    expect(leaseB.parentMessageGuid).toBe('assistant-1')
+    leaseB.invalidate()
+
+    const leaseC = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    expect(leaseC.parentMessageGuid).toBeNull()
+    leaseC.release()
+  })
+})

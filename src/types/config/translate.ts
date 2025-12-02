@@ -1,12 +1,34 @@
 import { langCodeISO6393Schema } from '@read-frog/definitions'
 import { z } from 'zod'
 import { HOTKEYS } from '@/utils/constants/hotkeys'
-import { MIN_BATCH_CHARACTERS, MIN_BATCH_ITEMS, MIN_TRANSLATE_CAPACITY, MIN_TRANSLATE_RATE } from '@/utils/constants/translate'
+import {
+  DEFAULT_REQUEST_BASE_RETRY_DELAY_MS,
+  DEFAULT_REQUEST_MAX_RETRIES,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  MAX_TRANSLATE_RETRIES,
+  MIN_BATCH_CHARACTERS,
+  MIN_BATCH_ITEMS,
+  MIN_TRANSLATE_CAPACITY,
+  MIN_TRANSLATE_RATE,
+  MIN_TRANSLATE_RETRY_DELAY_MS,
+  MIN_TRANSLATE_TIMEOUT_MS,
+} from '@/utils/constants/translate'
 import { TRANSLATION_NODE_STYLE } from '@/utils/constants/translation-node-style'
 
 export const requestQueueConfigSchema = z.object({
   capacity: z.number().gte(MIN_TRANSLATE_CAPACITY),
   rate: z.number().gte(MIN_TRANSLATE_RATE),
+  timeoutMs: z.number().gte(MIN_TRANSLATE_TIMEOUT_MS).default(DEFAULT_REQUEST_TIMEOUT_MS),
+  maxRetries: z
+    .number()
+    .int()
+    .gte(0)
+    .lte(MAX_TRANSLATE_RETRIES)
+    .default(DEFAULT_REQUEST_MAX_RETRIES),
+  baseRetryDelayMs: z
+    .number()
+    .gte(MIN_TRANSLATE_RETRY_DELAY_MS)
+    .default(DEFAULT_REQUEST_BASE_RETRY_DELAY_MS),
 })
 
 export const batchQueueConfigSchema = z.object({

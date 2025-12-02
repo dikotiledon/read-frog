@@ -12,7 +12,7 @@ import { WEBSITE_URL } from './url'
 
 export const DEFAULT_READ_MODELS: ReadModels = {
   genai: {
-    model: 'gauss-flash',
+    model: 'GPT-OSS',
     isCustomModel: false,
     customModel: null,
   },
@@ -130,7 +130,7 @@ export const DEFAULT_READ_MODELS: ReadModels = {
 
 export const DEFAULT_TRANSLATE_MODELS: TranslateLLMModels = {
   genai: {
-    model: 'gauss-flash',
+    model: 'GPT-OSS',
     isCustomModel: false,
     customModel: null,
   },
@@ -384,13 +384,13 @@ export const DEFAULT_PROVIDER_CONFIG = {
   google: {
     id: 'google-default',
     name: PROVIDER_ITEMS.google.name,
-    enabled: true,
+    enabled: false,
     provider: 'google',
   },
   microsoft: {
     id: 'microsoft-default',
     name: PROVIDER_ITEMS.microsoft.name,
-    enabled: true,
+    enabled: false,
     provider: 'microsoft',
   },
   siliconflow: {
@@ -409,7 +409,7 @@ export const DEFAULT_PROVIDER_CONFIG = {
     id: 'tensdaq-default',
     name: PROVIDER_ITEMS.tensdaq.name,
     description: i18n.t('options.apiProviders.providers.description.tensdaq'),
-    enabled: true,
+    enabled: false,
     provider: 'tensdaq',
     baseURL: 'https://tensdaq-api.x-aio.com/v1',
     models: {
@@ -421,7 +421,7 @@ export const DEFAULT_PROVIDER_CONFIG = {
     id: 'genai-default',
     name: PROVIDER_ITEMS.genai.name,
     description: i18n.t('options.apiProviders.providers.description.genai'),
-    enabled: false,
+    enabled: true,
     provider: 'genai',
     baseURL: 'https://genai.sec.samsung.net',
     models: {
@@ -433,7 +433,7 @@ export const DEFAULT_PROVIDER_CONFIG = {
     id: 'ai302-default',
     name: PROVIDER_ITEMS.ai302.name,
     description: i18n.t('options.apiProviders.providers.description.ai302'),
-    enabled: true,
+    enabled: false,
     provider: 'ai302',
     baseURL: 'https://api.302.ai/v1',
     models: {
@@ -457,7 +457,7 @@ export const DEFAULT_PROVIDER_CONFIG = {
     id: 'openai-default',
     name: PROVIDER_ITEMS.openai.name,
     description: i18n.t('options.apiProviders.providers.description.openai'),
-    enabled: true,
+    enabled: false,
     provider: 'openai',
     models: {
       read: DEFAULT_READ_MODELS.openai,
@@ -479,7 +479,7 @@ export const DEFAULT_PROVIDER_CONFIG = {
     id: 'gemini-default',
     name: PROVIDER_ITEMS.gemini.name,
     description: i18n.t('options.apiProviders.providers.description.gemini'),
-    enabled: true,
+    enabled: false,
     provider: 'gemini',
     models: {
       read: DEFAULT_READ_MODELS.gemini,
@@ -512,7 +512,7 @@ export const DEFAULT_PROVIDER_CONFIG = {
     id: 'deeplx-default',
     name: PROVIDER_ITEMS.deeplx.name,
     description: i18n.t('options.apiProviders.providers.description.deeplx'),
-    enabled: true,
+    enabled: false,
     provider: 'deeplx',
     baseURL: 'https://api.deeplx.org',
   },

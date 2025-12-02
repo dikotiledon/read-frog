@@ -1,7 +1,7 @@
 # Samsung GenAI Provider – Implementation Plan
 
 ## 1. Context & Current Capabilities
-- **Provider wiring**: `GenAIProviderConfig` already exists in `src/types/config/provider.ts`, default models point to `gauss-flash`, and the provider can be added/enabled from the Options UI.
+- **Provider wiring**: `GenAIProviderConfig` already exists in `src/types/config/provider.ts`, default models point to `GPT-OSS`, and the provider can be added/enabled from the Options UI.
 - **Service access**: All network calls go through `fetch(..., { credentials: 'include' })` so the browser session cookies are reused. No API key is needed.
 - **Interactive login**: `src/utils/genai/session.ts` exposes `ensureGenAISession`, which checks `/api/account/auth/session` and, when unauthenticated, opens `https://genai.sec.samsung.net` in a new tab until Samsung SSO finishes, then closes the tab.
 - **Translation/read flow**: Both `genaiTranslate` and `genaiGenerateText` are routed through `executeTranslate`/`aiTranslate`/`useRead`, so queued translations and read-mode summaries already hit GenAI when selected.

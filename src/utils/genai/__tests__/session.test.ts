@@ -46,12 +46,12 @@ const baseConfig: GenAIProviderConfig = {
   description: 'test',
   models: {
     read: {
-      model: 'gauss-flash',
+      model: 'GPT-OSS',
       isCustomModel: false,
       customModel: null,
     },
     translate: {
-      model: 'gauss-flash',
+      model: 'GPT-OSS',
       isCustomModel: false,
       customModel: null,
     },

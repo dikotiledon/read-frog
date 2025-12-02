@@ -200,6 +200,15 @@ options:
       rate:
         title: 每秒平均請求數量
         description: 平均每秒的請求數量，但允許設定最大突發請求數來短暫發送超量請求
+        timeoutMs:
+          title: 請求逾時（毫秒）
+          description: 在請求失敗前等待翻譯回應的最長時間
+        maxRetries:
+          title: 重試次數
+          description: 在顯示錯誤之前對失敗的翻譯請求進行重試的次數
+        baseRetryDelayMs:
+          title: 基礎重試延遲（毫秒）
+          description: 每次重試之間的初始等待時間；每次嘗試都會加倍以避免突發
     batchQueueConfig:
       title: 批量翻譯
       description: 配置批量翻譯時的字元數限制和最大段落數量（僅對大語言模型翻譯有效）

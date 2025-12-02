@@ -69,13 +69,32 @@ export async function getTranslatedTextAndRemoveSpinner(
   textContent: string,
   spinner: HTMLElement,
   translatedWrapperNode: HTMLElement,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   let translatedText: string | undefined
+  const translationPromise = translateText(textContent)
+
+  const abortPromise = signal
+    ? new Promise<never>((_, reject) => {
+        if (signal.aborted) {
+          reject(new DOMException('Translation aborted', 'AbortError'))
+          return
+        }
+        signal.addEventListener('abort', () => {
+          reject(new DOMException('Translation aborted', 'AbortError'))
+        }, { once: true })
+      })
+    : null
 
   try {
-    translatedText = await translateText(textContent)
+    translatedText = await (abortPromise ? Promise.race([translationPromise, abortPromise]) : translationPromise)
   }
   catch (error) {
+    if (signal?.aborted && error instanceof DOMException && error.name === 'AbortError') {
+      void translationPromise.catch(() => {})
+      return undefined
+    }
+
     const errorComponent = React.createElement(TranslationError, {
       nodes,
       error: error as APICallError,

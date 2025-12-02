@@ -18,7 +18,13 @@ import { findPreviousTranslatedWrapperInside } from '../dom/translation-wrapper'
 import { setTranslationDirAndLang } from '../translation-attributes'
 import { createSpinnerInside, getTranslatedTextAndRemoveSpinner } from '../ui/spinner'
 import { isNumericContent } from '../ui/translation-utils'
-import { MARK_ATTRIBUTES_REGEX, originalContentMap, translatingNodes } from './translation-state'
+import {
+  MARK_ATTRIBUTES_REGEX,
+  clearTranslationAbortController,
+  originalContentMap,
+  registerTranslationAbortController,
+  translatingNodes,
+} from './translation-state'
 
 export async function translateNodes(
   nodes: ChildNode[],
@@ -83,6 +89,8 @@ export async function translateNodesBilingualMode(
     translatedWrapperNode.setAttribute(WALKED_ATTRIBUTE, walkId)
     setTranslationDirAndLang(translatedWrapperNode, config)
     const spinner = createSpinnerInside(translatedWrapperNode)
+    const abortController = new AbortController()
+    registerTranslationAbortController(translatedWrapperNode, abortController)
 
     // Batch DOM insertion to reduce layout thrashing
     const insertOperation = () => {
@@ -98,7 +106,23 @@ export async function translateNodesBilingualMode(
     }
     batchDOMOperation(insertOperation)
 
-    const realTranslatedText = await getTranslatedTextAndRemoveSpinner(nodes, textContent, spinner, translatedWrapperNode)
+    let realTranslatedText: string | undefined
+    try {
+      realTranslatedText = await getTranslatedTextAndRemoveSpinner(
+        nodes,
+        textContent,
+        spinner,
+        translatedWrapperNode,
+        abortController.signal,
+      )
+    }
+    finally {
+      clearTranslationAbortController(translatedWrapperNode)
+    }
+
+    if (abortController.signal.aborted || !translatedWrapperNode.isConnected) {
+      return
+    }
 
     const translatedText = realTranslatedText === textContent ? '' : realTranslatedText
 
@@ -251,6 +275,8 @@ export async function translateNodeTranslationOnlyMode(
     translatedWrapperNode.style.display = 'contents'
     setTranslationDirAndLang(translatedWrapperNode, config)
     const spinner = createSpinnerInside(translatedWrapperNode)
+    const abortController = new AbortController()
+    registerTranslationAbortController(translatedWrapperNode, abortController)
 
     // Batch DOM insertion to reduce layout thrashing
     const insertOperation = () => {
@@ -266,7 +292,23 @@ export async function translateNodeTranslationOnlyMode(
     }
     batchDOMOperation(insertOperation)
 
-    const translatedText = await getTranslatedTextAndRemoveSpinner(nodes, textContent, spinner, translatedWrapperNode)
+    let translatedText: string | undefined
+    try {
+      translatedText = await getTranslatedTextAndRemoveSpinner(
+        nodes,
+        textContent,
+        spinner,
+        translatedWrapperNode,
+        abortController.signal,
+      )
+    }
+    finally {
+      clearTranslationAbortController(translatedWrapperNode)
+    }
+
+    if (abortController.signal.aborted || !translatedWrapperNode.isConnected) {
+      return
+    }
 
     if (!translatedText) {
       // Batch the remove operation to execute remove operation after insert operation

@@ -31,14 +31,25 @@ interface TranslateBatchData {
 
 export async function setUpRequestQueue() {
   const config = await ensureInitializedConfig()
-  const { translate: { requestQueueConfig: { rate, capacity }, batchQueueConfig: { maxCharactersPerBatch, maxItemsPerBatch } } } = config ?? DEFAULT_CONFIG
+  const {
+    translate: {
+      requestQueueConfig: {
+        rate,
+        capacity,
+        timeoutMs,
+        maxRetries,
+        baseRetryDelayMs,
+      },
+      batchQueueConfig: { maxCharactersPerBatch, maxItemsPerBatch },
+    },
+  } = config ?? DEFAULT_CONFIG
 
   const requestQueue = new RequestQueue({
     rate,
     capacity,
-    timeoutMs: 20_000,
-    maxRetries: 2,
-    baseRetryDelayMs: 1_000,
+    timeoutMs,
+    maxRetries,
+    baseRetryDelayMs,
   })
 
   /**

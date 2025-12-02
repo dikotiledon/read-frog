@@ -198,6 +198,15 @@ options:
       rate:
         title: 秒間平均リクエスト数
         description: 平均秒間リクエスト数（ただし、最大バーストリクエスト数を設定し一時的な超過リクエスト送信を許可）
+      timeoutMs:
+        title: リクエストタイムアウト（ミリ秒）
+        description: リクエストを失敗と見なすまで翻訳レスポンスを待機する最長時間
+      maxRetries:
+        title: リトライ回数
+        description: エラーを表示する前に失敗した翻訳リクエストを再試行する回数
+      baseRetryDelayMs:
+        title: 基本リトライ遅延（ミリ秒）
+        description: 各再試行の初期待機時間。バーストを避けるため試行ごとに倍増します
     batchQueueConfig:
       title: バッチ翻訳
       description: バッチ翻訳時の文字数制限と最大段落数を設定（大規模言語モデル翻訳でのみ有効）

@@ -3,7 +3,7 @@ import { removeReactShadowHost } from '../../../react-shadow-host/create-shadow-
 import { batchDOMOperation } from '../../dom/batch-dom'
 import { isHTMLElement, isTranslatedWrapperNode } from '../../dom/filter'
 import { deepQueryTopLevelSelector } from '../../dom/find'
-import { originalContentMap } from '../core/translation-state'
+import { abortTranslationForWrapper, originalContentMap } from '../core/translation-state'
 
 export function removeShadowHostInTranslatedWrapper(wrapper: HTMLElement): void {
   // Remove React shadow hosts (for error components)
@@ -24,6 +24,7 @@ export function removeShadowHostInTranslatedWrapper(wrapper: HTMLElement): void 
  * @param wrapper - The translated wrapper element to remove
  */
 export function removeTranslatedWrapperWithRestore(wrapper: HTMLElement): void {
+  abortTranslationForWrapper(wrapper, 'Wrapper removed before translation finished')
   removeShadowHostInTranslatedWrapper(wrapper)
 
   const translationMode = wrapper.getAttribute(TRANSLATION_MODE_ATTRIBUTE)

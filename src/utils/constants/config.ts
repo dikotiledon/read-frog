@@ -3,13 +3,21 @@ import type { PageTranslateRange } from '@/types/config/translate'
 import { DEFAULT_TRANSLATE_PROMPTS_CONFIG } from './prompt'
 import { DEFAULT_PROVIDER_CONFIG_LIST } from './providers'
 import { DEFAULT_SIDE_CONTENT_WIDTH } from './side'
-import { DEFAULT_AUTO_TRANSLATE_SHORTCUT_KEY, DEFAULT_BATCH_CONFIG, DEFAULT_REQUEST_CAPACITY, DEFAULT_REQUEST_RATE } from './translate'
+import {
+  DEFAULT_AUTO_TRANSLATE_SHORTCUT_KEY,
+  DEFAULT_BATCH_CONFIG,
+  DEFAULT_REQUEST_BASE_RETRY_DELAY_MS,
+  DEFAULT_REQUEST_CAPACITY,
+  DEFAULT_REQUEST_MAX_RETRIES,
+  DEFAULT_REQUEST_RATE,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+} from './translate'
 import { TRANSLATION_NODE_STYLE_ON_INSTALLED } from './translation-node-style'
 import { DEFAULT_TTS_CONFIG } from './tts'
 
 export const CONFIG_STORAGE_KEY = 'config'
 export const CONFIG_SCHEMA_VERSION_STORAGE_KEY = '__configSchemaVersion'
-export const CONFIG_SCHEMA_VERSION = 34
+export const CONFIG_SCHEMA_VERSION = 35
 
 export const DEFAULT_FLOATING_BUTTON_POSITION = 0.66
 
@@ -22,10 +30,10 @@ export const DEFAULT_CONFIG: Config = {
   },
   providersConfig: DEFAULT_PROVIDER_CONFIG_LIST,
   read: {
-    providerId: 'openai-default',
+    providerId: 'genai-default',
   },
   translate: {
-    providerId: 'microsoft-default',
+    providerId: 'genai-default',
     mode: 'bilingual',
     node: {
       enabled: true,
@@ -44,6 +52,9 @@ export const DEFAULT_CONFIG: Config = {
     requestQueueConfig: {
       capacity: DEFAULT_REQUEST_CAPACITY,
       rate: DEFAULT_REQUEST_RATE,
+      timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+      maxRetries: DEFAULT_REQUEST_MAX_RETRIES,
+      baseRetryDelayMs: DEFAULT_REQUEST_BASE_RETRY_DELAY_MS,
     },
     batchQueueConfig: {
       maxCharactersPerBatch: DEFAULT_BATCH_CONFIG.maxCharactersPerBatch,

@@ -3,7 +3,7 @@ import { z } from 'zod'
   Single source of truth
   ────────────────────────────── */
 export const READ_PROVIDER_MODELS = {
-  genai: ['gauss-flash'],
+  genai: ['GPT-OSS'],
   openai: ['gpt-5-mini', 'gpt-4.1-mini', 'gpt-4o-mini', 'gpt-5', 'gpt-4.1', 'gpt-4o'],
   deepseek: ['deepseek-chat'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
@@ -28,7 +28,7 @@ export const READ_PROVIDER_MODELS = {
   ollama: ['gemma3:27b', 'deepseek-v3'],
 } as const
 export const TRANSLATE_PROVIDER_MODELS = {
-  genai: ['gauss-flash'],
+  genai: ['GPT-OSS'],
   openai: ['gpt-5-mini', 'gpt-4.1-mini', 'gpt-4o-mini', 'gpt-5-nano', 'gpt-4.1-nano', 'gpt-5', 'gpt-4.1', 'gpt-4o'],
   deepseek: ['deepseek-chat'],
   gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash-exp'],

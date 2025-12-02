@@ -199,6 +199,15 @@ options:
       rate:
         title: 초당 평균 요청 수
         description: 초당 평균 요청 수 (단, 최대 버스트 요청 수 설정을 통한 일시적 초과 요청 전송 허용)
+      timeoutMs:
+        title: 요청 제한 시간(밀리초)
+        description: 요청이 실패로 간주되기 전까지 번역 응답을 기다리는 최대 시간
+      maxRetries:
+        title: 재시도 횟수
+        description: 오류를 표시하기 전에 실패한 번역 요청을 다시 시도하는 횟수
+      baseRetryDelayMs:
+        title: 기본 재시도 지연(밀리초)
+        description: 재시도 사이의 초기 대기 시간으로, 폭주를 막기 위해 시도할 때마다 두 배로 증가합니다
     batchQueueConfig:
       title: 배치 번역
       description: 배치 번역 시 문자 수 제한 및 최대 단락 수 구성 (대규모 언어 모델 번역에서만 유효)

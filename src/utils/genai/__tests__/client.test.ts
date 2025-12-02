@@ -131,6 +131,13 @@ describe('waitForMessageContent', () => {
       headers: { 'Content-Type': 'application/json' },
     })
 
+  const createNotFoundResponse = () =>
+    new Response(JSON.stringify({ message: 'not found' }), {
+      status: 404,
+      statusText: 'Not Found',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -220,5 +227,34 @@ describe('waitForMessageContent', () => {
     expect(content).toBe('done')
     expect(sleepSpy).toHaveBeenCalledTimes(3)
     expect(sleepSpy.mock.calls.map(call => call[0])).toEqual([10, 20, 30])
+  })
+
+  it('returns fallback immediately when the message has been deleted', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(createNotFoundResponse())
+    const sleepSpy = vi.fn()
+    const invalidateSpy = vi.fn()
+
+    const content = await waitForMessageContent(baseURL, guid, {
+      sleep: sleepSpy,
+      fallbackContent: 'streamed',
+      onInvalidateChat: invalidateSpy,
+    })
+
+    expect(content).toBe('streamed')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(sleepSpy).not.toHaveBeenCalled()
+    expect(invalidateSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws descriptive error when the message no longer exists and no fallback is available', async () => {
+    const invalidateSpy = vi.fn()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(createNotFoundResponse())
+
+    await expect(waitForMessageContent(baseURL, guid, {
+      sleep: async () => {},
+      onInvalidateChat: invalidateSpy,
+    })).rejects.toThrow(`[GenAI] Response ${guid} is no longer available (HTTP 404)`)
+
+    expect(invalidateSpy).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,6 +1,7 @@
 import type { GenAIProviderConfig } from '@/types/config/provider'
 import { browser } from '#imports'
 import { logger } from '@/utils/logger'
+import { sendMessage } from '@/utils/message'
 import { GENAI_DEFAULT_BASE_URL, GENAI_ENDPOINTS, GENAI_LOGIN_TIMEOUT_MS, GENAI_SESSION_RETRY_INTERVAL_MS } from './constants'
 
 type BrowserAPI = typeof browser
@@ -80,8 +81,13 @@ async function waitForSession(baseURL: string): Promise<void> {
 async function openInteractiveLoginTab(baseURL: string): Promise<number | undefined> {
   const browserApi = getBrowserApi()
   try {
-    const tab = await browserApi.tabs.create({ url: baseURL, active: true })
-    return tab.id ?? undefined
+    if (browserApi.tabs?.create) {
+      const tab = await browserApi.tabs.create({ url: baseURL, active: true })
+      return tab.id ?? undefined
+    }
+
+    logger.info('[GenAI] Delegating login tab creation to background context')
+    return await sendMessage('openExtensionTab', { url: baseURL, active: true })
   }
   catch (error) {
     logger.error('[GenAI] Failed to open login tab', error)
@@ -94,7 +100,13 @@ async function closeTab(tabId?: number) {
     return
   const browserApi = getBrowserApi()
   try {
-    await browserApi.tabs.remove(tabId)
+    if (browserApi.tabs?.remove) {
+      await browserApi.tabs.remove(tabId)
+      return
+    }
+
+    logger.info('[GenAI] Delegating login tab close to background context', { tabId })
+    await sendMessage('closeExtensionTab', { tabId })
   }
   catch (error) {
     logger.warn('[GenAI] Failed to close GenAI login tab', error)
