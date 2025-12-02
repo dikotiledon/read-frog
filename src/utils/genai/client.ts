@@ -187,6 +187,25 @@ async function invalidateChatWithRemoteDelete(baseURL: string, chatLease: GenAIC
   }
 }
 
+async function settlePendingMessageIfNeeded(baseURL: string, chatLease: GenAIChatLease): Promise<boolean> {
+  if (!chatLease.pendingMessageGuid)
+    return true
+
+  try {
+    await waitForMessageCompletion(baseURL, chatLease.pendingMessageGuid)
+    chatLease.setPendingMessageGuid(null)
+    return true
+  }
+  catch (error) {
+    logger.warn('[GenAI] Pending user message did not complete', {
+      chatGuid: chatLease.chatGuid,
+      pendingMessageGuid: chatLease.pendingMessageGuid,
+      error,
+    })
+    return false
+  }
+}
+
 const COMPLETE_STATUS_SET = new Set<string>([...GENAI_STREAM_COMPLETE_EVENTS, 'R20000', 'DONE', 'COMPLETED', 'COMPLETE'])
 const FAILURE_STATUS_SET = new Set(['FAIL', 'FAILED', 'ERROR'])
 const MISSING_RESPONSE_HTTP_STATUS = new Set([404, 410])
@@ -294,6 +313,11 @@ type WaitForContentOptions = {
   sleep?: (ms: number) => Promise<void>
   fallbackContent?: string | null
   onInvalidateChat?: () => void
+}
+
+type MessageContentResult = {
+  content: string
+  completed: boolean
 }
 
 type GenAIMessageResponse = {
@@ -492,7 +516,7 @@ async function waitForMessageContent(
   baseURL: string,
   responseGuid: string,
   options?: WaitForContentOptions,
-): Promise<string> {
+): Promise<MessageContentResult> {
   const pollIntervalMs = options?.pollIntervalMs ?? GENAI_MESSAGE_POLL_INTERVAL_MS
   const timeoutMs = options?.timeoutMs ?? GENAI_MESSAGE_POLL_TIMEOUT_MS
   const sleepFn = options?.sleep ?? sleep
@@ -525,7 +549,10 @@ async function waitForMessageContent(
 
         if (hasFallback) {
           logger.warn('[GenAI] Response message missing, using SSE fallback content', logContext)
-          return fallbackContent as string
+          return {
+            content: fallbackContent as string,
+            completed: false,
+          }
         }
 
         logger.warn('[GenAI] Response message missing, aborting polling', logContext)
@@ -552,7 +579,10 @@ async function waitForMessageContent(
     const isComplete = (status && COMPLETE_STATUS_SET.has(status)) || isSuccessfulResponseCode(responseCode)
     if (isComplete) {
       if (latestContent !== null)
-        return latestContent
+        return {
+          content: latestContent,
+          completed: true,
+        }
 
       if (hasFallback) {
         logger.warn('[GenAI] Using SSE fallback content due to empty response payload', {
@@ -561,7 +591,10 @@ async function waitForMessageContent(
           status,
           responseCode,
         })
-        return fallbackContent as string
+        return {
+          content: fallbackContent as string,
+          completed: true,
+        }
       }
 
       logger.warn('[GenAI] Response reported completion but payload is empty, returning empty string', {
@@ -570,7 +603,10 @@ async function waitForMessageContent(
         status,
         responseCode,
       })
-      return ''
+      return {
+        content: '',
+        completed: true,
+      }
     }
 
     if (Date.now() >= deadline) {
@@ -580,7 +616,10 @@ async function waitForMessageContent(
           attempts,
           lastStatus: status,
         })
-        return fallbackContent as string
+        return {
+          content: fallbackContent as string,
+          completed: false,
+        }
       }
 
       logger.warn('[GenAI] Timed out waiting for response content', {
@@ -670,46 +709,80 @@ export async function genaiTranslate(
     let shouldResetChat = false
     let resetReason: string | null = null
     let pendingSet = false
+    let pendingMessageSettled = false
 
     try {
       if (chatLease.pendingMessageGuid) {
-        logger.warn('[GenAI] Chat has unfinished message, resetting before reuse', {
-          chatGuid: chatLease.chatGuid,
-          pendingMessageGuid: chatLease.pendingMessageGuid,
-        })
-        shouldResetChat = true
-        resetReason = 'stale-pending-message'
-        continue translateChatLoop
-      }
-
-      const parentGuid = chatLease.parentMessageGuid ?? undefined
-      let messageGuid: string
-      try {
-        messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, combinedContent, parentGuid)
-      }
-      catch (error) {
-        if (error instanceof GenAIPendingResponseError) {
+        const settled = await settlePendingMessageIfNeeded(baseURL, chatLease)
+        if (!settled) {
           shouldResetChat = true
-          resetReason = 'chat-error-4'
+          resetReason = 'stale-pending-message'
           continue translateChatLoop
         }
-        throw error
       }
 
-      chatLease.setPendingMessageGuid(messageGuid)
-      pendingSet = true
+      let parentCompletionWaitAttempted = false
 
-      const modelRef = getModelName(providerConfig, 'translate')
-      const modelGuid = resolveGenAIModelGuid(modelRef)
+      while (true) {
+        const parentGuid = chatLease.parentMessageGuid ?? undefined
+        let messageGuid: string
+        try {
+          messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, combinedContent, parentGuid)
+        }
+        catch (error) {
+          if (error instanceof GenAIPendingResponseError && parentGuid && !parentCompletionWaitAttempted) {
+            parentCompletionWaitAttempted = true
+            try {
+              await waitForMessageCompletion(baseURL, parentGuid)
+              continue
+            }
+            catch (completionError) {
+              logger.warn('[GenAI] Parent message did not complete before retrying', {
+                chatGuid: chatLease.chatGuid,
+                parentGuid,
+                error: completionError,
+              })
+              shouldResetChat = true
+              resetReason = 'parent-still-processing'
+              break
+            }
+          }
 
-      const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid)
-      const translation = await waitForMessageContent(baseURL, assistantGuid, {
-        fallbackContent,
-        onInvalidateChat: chatLease.invalidate,
-      })
+          if (error instanceof GenAIPendingResponseError) {
+            shouldResetChat = true
+            resetReason = 'chat-error-4'
+            break
+          }
 
-      chatLease.setParentMessageGuid(assistantGuid)
-      return normalizeAssistantResponse(translation)
+          throw error
+        }
+
+        chatLease.setPendingMessageGuid(messageGuid)
+        pendingSet = true
+
+        const modelRef = getModelName(providerConfig, 'translate')
+        const modelGuid = resolveGenAIModelGuid(modelRef)
+
+        const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid)
+        const translationResult = await waitForMessageContent(baseURL, assistantGuid, {
+          fallbackContent,
+          onInvalidateChat: chatLease.invalidate,
+        })
+
+        pendingMessageSettled = translationResult.completed
+
+        if (translationResult.completed)
+          chatLease.setParentMessageGuid(assistantGuid)
+        else {
+          shouldResetChat = true
+          resetReason = 'response-incomplete'
+        }
+
+        return normalizeAssistantResponse(translationResult.content)
+      }
+
+      if (shouldResetChat)
+        continue translateChatLoop
     }
     catch (error) {
       if (shouldInvalidateChatFromHttpError(error))
@@ -717,7 +790,7 @@ export async function genaiTranslate(
       throw error
     }
     finally {
-      if (pendingSet)
+      if (pendingSet && pendingMessageSettled)
         chatLease.setPendingMessageGuid(null)
 
       if (shouldResetChat)
@@ -749,45 +822,80 @@ export async function genaiGenerateText(
     let shouldResetChat = false
     let resetReason: string | null = null
     let pendingSet = false
+    let pendingMessageSettled = false
 
     try {
       if (chatLease.pendingMessageGuid) {
-        logger.warn('[GenAI] Chat has unfinished message, resetting before reuse', {
-          chatGuid: chatLease.chatGuid,
-          pendingMessageGuid: chatLease.pendingMessageGuid,
-        })
-        shouldResetChat = true
-        resetReason = 'stale-pending-message'
-        continue generateChatLoop
-      }
-
-      const parentGuid = chatLease.parentMessageGuid ?? undefined
-      let messageGuid: string
-      try {
-        messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, content, parentGuid)
-      }
-      catch (error) {
-        if (error instanceof GenAIPendingResponseError) {
+        const settled = await settlePendingMessageIfNeeded(baseURL, chatLease)
+        if (!settled) {
           shouldResetChat = true
-          resetReason = 'chat-error-4'
+          resetReason = 'stale-pending-message'
           continue generateChatLoop
         }
-        throw error
       }
 
-      chatLease.setPendingMessageGuid(messageGuid)
-      pendingSet = true
+      let parentCompletionWaitAttempted = false
 
-      const modelRef = getModelName(providerConfig, modelType)
-      const modelGuid = resolveGenAIModelGuid(modelRef)
+      while (true) {
+        const parentGuid = chatLease.parentMessageGuid ?? undefined
+        let messageGuid: string
+        try {
+          messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, content, parentGuid)
+        }
+        catch (error) {
+          if (error instanceof GenAIPendingResponseError && parentGuid && !parentCompletionWaitAttempted) {
+            parentCompletionWaitAttempted = true
+            try {
+              await waitForMessageCompletion(baseURL, parentGuid)
+              continue
+            }
+            catch (completionError) {
+              logger.warn('[GenAI] Parent message did not complete before retrying', {
+                chatGuid: chatLease.chatGuid,
+                parentGuid,
+                error: completionError,
+              })
+              shouldResetChat = true
+              resetReason = 'parent-still-processing'
+              break
+            }
+          }
 
-      const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid)
-      const text = await waitForMessageContent(baseURL, assistantGuid, {
-        fallbackContent,
-        onInvalidateChat: chatLease.invalidate,
-      })
-      chatLease.setParentMessageGuid(assistantGuid)
-      return normalizeAssistantResponse(text)
+          if (error instanceof GenAIPendingResponseError) {
+            shouldResetChat = true
+            resetReason = 'chat-error-4'
+            break
+          }
+
+          throw error
+        }
+
+        chatLease.setPendingMessageGuid(messageGuid)
+        pendingSet = true
+
+        const modelRef = getModelName(providerConfig, modelType)
+        const modelGuid = resolveGenAIModelGuid(modelRef)
+
+        const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid)
+        const textResult = await waitForMessageContent(baseURL, assistantGuid, {
+          fallbackContent,
+          onInvalidateChat: chatLease.invalidate,
+        })
+
+        pendingMessageSettled = textResult.completed
+
+        if (textResult.completed)
+          chatLease.setParentMessageGuid(assistantGuid)
+        else {
+          shouldResetChat = true
+          resetReason = 'response-incomplete'
+        }
+
+        return normalizeAssistantResponse(textResult.content)
+      }
+
+      if (shouldResetChat)
+        continue generateChatLoop
     }
     catch (error) {
       if (shouldInvalidateChatFromHttpError(error))
@@ -795,7 +903,7 @@ export async function genaiGenerateText(
       throw error
     }
     finally {
-      if (pendingSet)
+      if (pendingSet && pendingMessageSettled)
         chatLease.setPendingMessageGuid(null)
 
       if (shouldResetChat)

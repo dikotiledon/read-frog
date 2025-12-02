@@ -12,6 +12,12 @@
 - **Message polling**: After SSE completion we poll `/api/chat/v1/messages/{guid}` until the body contains text; if Samsung reports `status: SUCCESS` or any `responseCode` while the payload is still empty, we fall back to the streamed content instead of surfacing a blank translation.
 - **Test coverage**: `src/utils/genai/__tests__/client.test.ts` exercises the SSE fallback path plus the new polling helper (success, timeout, failure, and fallback scenarios), and the suite is green.
 
+## Latest Progress (Dec 2, 2025)
+- **Chat pool persistence**: `src/utils/genai/chat-pool.ts` now records both the last assistant guid **and** the last in-flight user message guid (`pendingMessageGuid`). If a tab closes mid-stream, the next lease sees the pending guid and skips or resets that conversation instead of reusing a broken parent chain.
+- **Automatic chat resets**: `genaiTranslate`/`genaiGenerateText` maintain up to three recovery attempts. When Samsung returns `CHAT_ERROR_4` or we detect a stale pending message, we call `DELETE /api/chat/v1/chats` with the problematic `chatGuid`, invalidate the lease, and spin up a fresh conversation. This effectively keeps multiple conversations in rotation and prevents wrong-parent loops.
+- **Error instrumentation**: Structured logs differentiate between `stale-pending-message`, `chat-error-4`, HTTP invalidations, and SSE fallbacks. This gives the support team quick breadcrumbs when QA attaches console logs.
+- **Regression tests**: `chat-pool.test.ts` now verifies that pending message metadata survives hydration, and the client suite still passes with the stricter completion rules.
+
 ## 2. Product Goals & Constraints
 1. Allow users to run every Read Frog feature (page translation, selection translation, read summaries, AI content aware) with GenAI as the provider.
 2. No API key; the browser session + Samsung corporate SSO are the only auth mechanisms.
@@ -59,6 +65,7 @@
 
 ### 3.6 Observability & Error Handling
 - `src/utils/logger.ts`: add structured logs for session checks, login attempts, SSE parsing failures, and translation failures specific to GenAI.
+- Tag logs with `chatGuid`, `pendingMessageGuid`, and `resetReason` so ops can see when the pool is repeatedly recycling conversations; promote `CHAT_ERROR_4` counts to the telemetry dashboard.
 - Optional: send anonymized telemetry events (success/failure counters) to help monitor stability once released.
 
 ### 3.7 Documentation
@@ -70,6 +77,7 @@
 1. **Unit tests**
    - `src/utils/genai/__tests__/session.test.ts`: mock `fetch` + `browser.tabs` to cover logged-in, interactive login, and timeout paths.
   - `src/utils/genai/__tests__/client.test.ts`: mock SSE responses to test `readEventStream`, message-content polling, and fallback behavior when the REST payload is empty.
+  - `src/utils/genai/__tests__/chat-pool.test.ts`: persist pending message guids and verify hydration skips busy chats / resets state on invalidation.
 2. **Integration tests** (Vitest / Playwright)
    - Stub GenAI endpoints to validate translation queue + Options UI flows without hitting the real service.
 3. **Manual QA checklist**
@@ -81,6 +89,13 @@
 - Add a Changeset entry announcing GenAI support and describing the SSO tab behavior.
 - Update release notes and support macros to instruct users to stay logged into the Samsung portal.
 - Monitor telemetry/logs after rollout; if session errors spike, raise alerts and coordinate with the Samsung SSO team.
+
+### 3.10 Conversation Pooling & Recovery
+- **State tracking**: Each provider/baseURL pair has a single pooled chat that persists `parentMessageGuid`, `pendingMessageGuid`, and `pendingSince`. TTL eviction still applies (60s by default) so stale chats quietly disappear.
+- **Pending enforcement**: When `acquireGenAIChat` hydrates a lease whose `pendingMessageGuid` is still set, the client immediately skips the chat and schedules a remote delete. This avoids "parent message still processing" loops after page refreshes or crashes.
+- **Remote deletion**: `DELETE https://genai.sec.samsung.net/api/chat/v1/chats` now runs before every forced reset. The request payload looks like `{"chatGuids":["019ade1b-c2a7-7220-a115-8a2868c2655b"]}` and the API echoes the same array when successful.
+- **Retry budget**: Both translate/read helpers attempt up to `GENAI_CHAT_MAX_RECOVERY_ATTEMPTS` (currently 3) before failing fast with `[GenAI] Unable to obtain an available chat conversation`. Each attempt either reuses a healthy lease or provisions a fresh conversation.
+- **Operational logging**: Every reset includes `reason` metadata (`stale-pending-message`, `chat-error-4`, `pending-message`, HTTP status) so we can correlate console logs with Samsung portal outages.
 
 ## 4. Environments, Build, & Permissions
 - **Browser permissions**: `wxt.config.ts` now whitelists `https://genai.sec.samsung.net/*` in both `permissions` (for `tabs`/`cookies`) and `host_permissions`. Keep Chromium/Edge/Firefox manifests in sync whenever Samsung changes hostnames.
@@ -101,6 +116,7 @@
 - **Translation queue congestion**: GenAI latency could block other providers; ensure provider IDs partition BatchQueue keys and consider per-provider concurrency caps.
 - **Cookie scope issues**: Firefox sometimes isolates storage; add troubleshooting tips in docs and consider using `browser.cookies` API to detect missing cookies before opening tabs.
 - **Telemetry gaps**: without provider-specific metrics, failures are invisible; add structured logs + optional ORPC events tagged `provider:genai`.
+- **Chat cleanup API**: if `DELETE /api/chat/v1/chats` ever fails permanently, the pool could thrash between stale conversations. Mitigation: fallback to local invalidation after N failures and surface an in-app warning so users can manually re-login.
 
 ## 7. Open Questions
 1. Do we need differential base URLs for staging vs. production Samsung environments? (If yes, expose `baseURL` in Options with validation.)
@@ -113,3 +129,11 @@
 - **Technical**: <2% session refresh failures per day, 95th percentile interactive login under 25 seconds, zero cross-provider cache leaks.
 - **Product**: ≥90% of Samsung pilot users complete the manual QA checklist without assistance, and GenAI usage accounts for ≥30% of translation jobs inside the corp tenant within one month.
 - **Support**: Time-to-resolution for GenAI tickets under 1 business day, with canned responses linked directly to the README + manual run docs.
+
+## 9. Operational Runbook
+- **Known errors**
+  - `CHAT_ERROR_4`: almost always means the previous assistant message is still processing. The client now deletes the chat and retries automatically; if the error persists after three retries, ask the user to re-open GenAI in a new tab to generate a clean conversation.
+  - `R50002` / error response codes: surfaced as fatal in logs and bubbled to the UI; advise users to retrigger translation once Samsung restores service.
+- **Log breadcrumbs**: search for `[GenAI] Chat has unfinished message` to confirm the pool skipped a lease, and `[GenAI] Deleted chat conversation before retry` to verify the remote cleanup completed. Correlate `chatGuid` between these logs and Samsung's portal admin console if needed.
+- **Manual cleanup**: If both automated deletion and retries fail, run a `DELETE /api/chat/v1/chats` request with the offending guid (payload: `{"chatGuids":["<guid>"]}`) via the browser devtools console while authenticated; then reload the extension.
+- **Performance tuning**: Monitor the `pendingSince` timestamps in debug logs. If chats routinely sit in pending > 15s, consider lowering the TTL or increasing the retry budget for high-volume tabs.

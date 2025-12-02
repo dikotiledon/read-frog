@@ -7,6 +7,12 @@ Samsung GenAI can only be accessed through the browser session; it has no public
 
 ⚠️ Samsung's session endpoint always returns `{"statusCode":200}`. A **valid** login response also includes a populated `data` object (id, name, email, permissions, etc.). The extension now treats `200` responses without `data` as unauthenticated and will reopen the GenAI tab until a full payload arrives.
 
+### New behavior (Dec 2, 2025)
+- The extension tracks the last **pending** user message per chat. If you close a tab while a translation is still processing, the next request will detect the orphaned guid, delete the old conversation via `DELETE /api/chat/v1/chats`, and start fresh. No manual cleanup is required unless three automatic attempts fail in a row.
+- Multiple conversations can be active in parallel: the chat pool keeps at most one lease per provider/baseURL, but each failed attempt forces a new `chatGuid`. This keeps `CHAT_ERROR_4` loops from blocking new work.
+- When troubleshooting, grab the console logs that mention `[GenAI] Chat has unfinished message` or `[GenAI] Deleted chat conversation before retry`—they include the exact guid passed to the delete endpoint (`{"chatGuids":["…"]}`).
+- If a QA run still shows persistent `CHAT_ERROR_4` after the automatic retries, manually hit `https://genai.sec.samsung.net/api/chat/v1/chats` with the payload shown above while authenticated, reload Read Frog, and re-run the translation.
+
 i want to use 
 https://genai.sec.samsung.net as provider, but they not provide API support so it must create manually
 

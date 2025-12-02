@@ -149,13 +149,13 @@ describe('waitForMessageContent', () => {
       createJsonResponse({ content: 'ready', status: 'SUCCESS' }),
     )
 
-    const content = await waitForMessageContent(baseURL, guid, {
+    const result = await waitForMessageContent(baseURL, guid, {
       sleep: async () => {},
       pollIntervalMs: 0,
       timeoutMs: 100,
     })
 
-    expect(content).toBe('ready')
+    expect(result).toEqual({ content: 'ready', completed: true })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -166,13 +166,13 @@ describe('waitForMessageContent', () => {
       createJsonResponse({ content: '', status: 'SUCCESS' }),
     )
 
-    const content = await waitForMessageContent(baseURL, guid, {
+    const result = await waitForMessageContent(baseURL, guid, {
       sleep: async () => {},
       pollIntervalMs: 0,
       timeoutMs: 100,
     })
 
-    expect(content).toBe('partial')
+    expect(result).toEqual({ content: 'partial', completed: true })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -213,12 +213,12 @@ describe('waitForMessageContent', () => {
       createJsonResponse({ content: '', status: 'SUCCESS' }),
     )
 
-    const content = await waitForMessageContent(baseURL, guid, {
+    const result = await waitForMessageContent(baseURL, guid, {
       sleep: async () => {},
       fallbackContent: '嗨',
     })
 
-    expect(content).toBe('嗨')
+    expect(result).toEqual({ content: '嗨', completed: true })
   })
 
   it('returns fallback after timeout when content never arrives', async () => {
@@ -226,14 +226,14 @@ describe('waitForMessageContent', () => {
       createJsonResponse({ content: '', status: 'PROCESS' }),
     )
 
-    const content = await waitForMessageContent(baseURL, guid, {
+    const result = await waitForMessageContent(baseURL, guid, {
       sleep: async () => {},
       pollIntervalMs: 0,
       timeoutMs: 0,
       fallbackContent: 'cached',
     })
 
-    expect(content).toBe('cached')
+    expect(result).toEqual({ content: 'cached', completed: false })
   })
 
   it('backs off polling delays to avoid spamming requests', async () => {
@@ -245,13 +245,13 @@ describe('waitForMessageContent', () => {
 
     const sleepSpy = vi.fn().mockResolvedValue(undefined)
 
-    const content = await waitForMessageContent(baseURL, guid, {
+    const result = await waitForMessageContent(baseURL, guid, {
       sleep: sleepSpy,
       pollIntervalMs: 10,
       timeoutMs: 1_000,
     })
 
-    expect(content).toBe('done')
+    expect(result).toEqual({ content: 'done', completed: true })
     expect(sleepSpy).toHaveBeenCalledTimes(3)
     expect(sleepSpy.mock.calls.map(call => call[0])).toEqual([10, 20, 30])
   })
@@ -261,13 +261,13 @@ describe('waitForMessageContent', () => {
     const sleepSpy = vi.fn()
     const invalidateSpy = vi.fn()
 
-    const content = await waitForMessageContent(baseURL, guid, {
+    const result = await waitForMessageContent(baseURL, guid, {
       sleep: sleepSpy,
       fallbackContent: 'streamed',
       onInvalidateChat: invalidateSpy,
     })
 
-    expect(content).toBe('streamed')
+    expect(result).toEqual({ content: 'streamed', completed: false })
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(sleepSpy).not.toHaveBeenCalled()
     expect(invalidateSpy).toHaveBeenCalledTimes(1)
