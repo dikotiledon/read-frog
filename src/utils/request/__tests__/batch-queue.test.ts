@@ -85,6 +85,7 @@ function createBatchQueue(
     enableFallbackToIndividual?: boolean
     executeIndividual?: (data: TranslateBatchData) => Promise<string>
     onError?: (error: Error, context: { batchKey: string, retryCount: number, isFallback: boolean }) => void
+    getMaxCharactersForTask?: (data: TranslateBatchData) => number | undefined
   },
 ) {
   return new BatchQueue<TranslateBatchData, string>({
@@ -97,6 +98,7 @@ function createBatchQueue(
     getCharacters: (data) => {
       return data.text.length
     },
+    getMaxCharactersForTask: options?.getMaxCharactersForTask,
     executeBatch: async (dataList) => {
       const { langConfig, providerConfig } = dataList[0]
       const texts = dataList.map(d => d.text)
@@ -207,6 +209,37 @@ describe('batchQueue – batching logic', () => {
 
     const results = await Promise.all(promises)
     expect(results).toEqual(['result1', 'result2'])
+  })
+
+  it('flushes when dynamic character budget is exceeded', async () => {
+    vi.useFakeTimers()
+    mockExecuteTranslate.mockResolvedValue('dynamic')
+
+    const requestQueue = new RequestQueue(baseRequestQueueConfig)
+    const batchQueue = createBatchQueue(requestQueue, baseBatchConfig, {
+      getMaxCharactersForTask: () => 40,
+    })
+
+    const longText = '123456789012345678901234567890'
+    const promises = [
+      batchQueue.enqueue({
+        text: longText,
+        langConfig: sampleLangConfig,
+        providerConfig: sampleProviderConfig,
+        hash: 'hash1',
+      }),
+      batchQueue.enqueue({
+        text: longText,
+        langConfig: sampleLangConfig,
+        providerConfig: sampleProviderConfig,
+        hash: 'hash2',
+      }),
+    ]
+
+    vi.advanceTimersByTime(baseBatchConfig.batchDelay)
+    await Promise.all(promises)
+
+    expect(mockExecuteTranslate).toHaveBeenCalledTimes(2)
   })
 
   it('flushes batch when character limit reached', async () => {
@@ -510,6 +543,65 @@ describe('batchQueue – error handling', () => {
         isFallback: false,
       }),
     )
+  })
+})
+
+describe('batchQueue – cancellation', () => {
+  it('cancels pending tasks before they are dispatched', async () => {
+    vi.useFakeTimers()
+    mockTranslateSuccess(['result'])
+
+    const requestQueue = new RequestQueue(baseRequestQueueConfig)
+    const batchQueue = createBatchQueue(requestQueue)
+
+    const promise1 = batchQueue.enqueue({
+      text: 'Keep me',
+      langConfig: sampleLangConfig,
+      providerConfig: sampleProviderConfig,
+      hash: 'hash-keep',
+    })
+    const promise2 = batchQueue.enqueue({
+      text: 'Cancel me',
+      langConfig: sampleLangConfig,
+      providerConfig: sampleProviderConfig,
+      hash: 'hash-cancel',
+    })
+
+    batchQueue.cancelTasks(data => data.hash === 'hash-cancel', 'Tab closed')
+
+    vi.advanceTimersByTime(baseBatchConfig.batchDelay)
+    vi.advanceTimersByTime(0)
+
+    await expect(promise1).resolves.toBe('result')
+    await expect(promise2).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('cancels in-flight tasks and rejects consumers', async () => {
+    vi.useFakeTimers()
+    let resolveTranslate: ((value: string) => void) | undefined
+    mockExecuteTranslate.mockImplementation(() => new Promise<string>((resolve) => {
+      resolveTranslate = resolve
+    }))
+
+    const requestQueue = new RequestQueue(baseRequestQueueConfig)
+    const batchQueue = createBatchQueue(requestQueue)
+
+    const promise = batchQueue.enqueue({
+      text: 'Pending',
+      langConfig: sampleLangConfig,
+      providerConfig: sampleProviderConfig,
+      hash: 'hash-pending',
+    })
+
+    // Flush immediately so the task becomes in-flight
+    vi.advanceTimersByTime(baseBatchConfig.batchDelay)
+    await Promise.resolve()
+
+    batchQueue.cancelTasks(data => data.hash === 'hash-pending', 'Tab closed')
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+
+    resolveTranslate?.('ignored')
   })
 })
 

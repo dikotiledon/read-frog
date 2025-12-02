@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { __private__ } from '../client'
 
-const { readEventStream, parseGuidsFromRawSSE, waitForMessageContent } = __private__
+const { readEventStream, parseGuidsFromRawSSE, waitForMessageContent, waitForMessageCompletion } = __private__
 
 function createSSEStream(data: string) {
   const encoder = new TextEncoder()
@@ -20,6 +20,22 @@ function createSSEStream(data: string) {
     },
   })
 }
+
+const baseURL = 'https://example.com'
+const guid = 'response-guid'
+
+const createJsonResponse = (body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+
+const createNotFoundResponse = () =>
+  new Response(JSON.stringify({ message: 'not found' }), {
+    status: 404,
+    statusText: 'Not Found',
+    headers: { 'Content-Type': 'application/json' },
+  })
 
 describe('readEventStream', () => {
   it('handles CRLF-delimited SSE chunks', async () => {
@@ -122,22 +138,6 @@ describe('parseGuidsFromRawSSE', () => {
 })
 
 describe('waitForMessageContent', () => {
-  const baseURL = 'https://example.com'
-  const guid = 'response-guid'
-
-  const createJsonResponse = (body: unknown) =>
-    new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-  const createNotFoundResponse = () =>
-    new Response(JSON.stringify({ message: 'not found' }), {
-      status: 404,
-      statusText: 'Not Found',
-      headers: { 'Content-Type': 'application/json' },
-    })
-
   afterEach(() => {
     vi.restoreAllMocks()
   })
@@ -156,6 +156,23 @@ describe('waitForMessageContent', () => {
     })
 
     expect(content).toBe('ready')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('waits for completion even when content arrives early', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      createJsonResponse({ content: 'partial', status: 'PROCESS' }),
+    ).mockResolvedValueOnce(
+      createJsonResponse({ content: '', status: 'SUCCESS' }),
+    )
+
+    const content = await waitForMessageContent(baseURL, guid, {
+      sleep: async () => {},
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    })
+
+    expect(content).toBe('partial')
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -179,6 +196,16 @@ describe('waitForMessageContent', () => {
     await expect(waitForMessageContent(baseURL, guid, {
       sleep: async () => {},
     })).rejects.toThrow('[GenAI] Response failed with status FAIL')
+  })
+
+  it('throws when a failure response code is returned', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      createJsonResponse({ content: '', responseCode: 'R50002' }),
+    )
+
+    await expect(waitForMessageContent(baseURL, guid, {
+      sleep: async () => {},
+    })).rejects.toThrow('[GenAI] Response failed with response code R50002')
   })
 
   it('returns fallback when status is success but content empty', async () => {
@@ -256,5 +283,50 @@ describe('waitForMessageContent', () => {
     })).rejects.toThrow(`[GenAI] Response ${guid} is no longer available (HTTP 404)`)
 
     expect(invalidateSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('waitForMessageCompletion', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('resolves when the message reports success', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      createJsonResponse({ status: 'PROCESS' }),
+    ).mockResolvedValueOnce(
+      createJsonResponse({ status: 'SUCCESS' }),
+    )
+
+    const result = await waitForMessageCompletion(baseURL, 'message-guid', {
+      sleep: async () => {},
+      pollIntervalMs: 0,
+      timeoutMs: 100,
+    })
+
+    expect(result.status).toBe('SUCCESS')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('throws when the message reports an error response code', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      createJsonResponse({ responseCode: 'R50002' }),
+    )
+
+    await expect(waitForMessageCompletion(baseURL, 'message-guid', {
+      sleep: async () => {},
+    })).rejects.toThrow('[GenAI] Message message-guid failed with response code R50002')
+  })
+
+  it('throws when the wait exceeds the timeout', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      createJsonResponse({ status: 'PROCESS' }),
+    )
+
+    await expect(waitForMessageCompletion(baseURL, 'message-guid', {
+      sleep: async () => {},
+      timeoutMs: 0,
+      pollIntervalMs: 0,
+    })).rejects.toThrow('[GenAI] Timed out waiting for message message-guid to complete')
   })
 })

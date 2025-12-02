@@ -53,6 +53,7 @@ describe('translate-text', () => {
         providerConfig: expect.any(Object),
         scheduleAt: expect.any(Number),
         hash: expect.any(String),
+        clientRequestId: expect.any(String),
       }))
     })
   })

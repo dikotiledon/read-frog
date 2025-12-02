@@ -698,3 +698,67 @@ Response
 	"artifact": null
 }
 
+
+
+
+---- TO PREVENT 422 CHAT_ERROR_4 WHILE USING SAME CONVERSATION ---
+{
+    "statusCode": 422,
+    "error": "Unprocessable Entity",
+    "message": "Cannot query multiple questions with the same answer.",
+    "detailMessage": "Cannot query multiple questions with the same answer.",
+    "errorCode": "CHAT_ERROR_4"
+}
+
+In
+Request URL
+https://genai.sec.samsung.net/api/chat/v1/messages
+Request Method
+POST
+Status Code
+
+also when i test manual in browser for chat in genai, the parentMessageGuid are set in https://genai.sec.samsung.net/api/chat/v1/messages
+
+sample
+Request URL
+https://genai.sec.samsung.net/api/chat/v1/messages
+Request Method
+POST
+Status Code
+200 OK
+
+Payload
+{"chatGuid":"019adc63-f6d3-7eea-b9d7-2612dff9613b","messageType":"chat","content":"You are a professional Simplified Mandarin Chinese native translator who needs to fluently translate text into Simplified Mandarin Chinese.\n\n## Translation Rules\n1. Output only the translated content, without explanations or additional content (such as \"Here's the translation:\" or \"Translation as follows:\")\n2. The returned translation must maintain exactly the same number of paragraphs and format as the original text.\n3. If the text contains HTML tags, consider where the tags should be placed in the translation while maintaining fluency.\n4. For content that should not be translated (such as proper nouns, code, etc.), keep the original text.\n\n## Document Metadata for Context Awareness\nTitle: Google\nSummary: No summary available\n\n## Multi-paragraph Translation Rules\n1. If input contains %%, use %% in your output, if input has no %%, don't use %% in your output\n2. **CRITICAL**: Preserve exact formatting around %% - use exactly one empty line before and after, with no extra spaces, tabs, or whitespace\n\n## OUTPUT FORMAT:\n- **Single paragraph input** → Output translation directly (no separators, no extra text)\n- **Multi-paragraph input (input uses %% separators)** → Use %% as paragraph separator between translations\n\n## Examples\n\n### Multi-paragraph Input:\nParagraph A\n\n%%\n\nParagraph B\n\n%%\n\nParagraph C\n\n### Multi-paragraph Output:\nTranslation A\n\n%%\n\nTranslation B\n\n%%\n\nTranslation C\n\n### Single paragraph Input:\nSingle paragraph content\n\n### Single paragraph Output:\nDirect translation without separators\n\n\nTranslate to Simplified Mandarin Chinese:\n\n\nIndonesia\n\n%%\n\nTentang\n\n%%\n\nPeriklanan\n\n%%\n\nBisnis","attributes":{"plugins":[],"mcpServers":[],"knowledge":[],"embeddingKnowledge":[],"codeInterpreters":false},"fileUuids":[],"parentMessageGuid":"019adc65-8900-725e-87ae-2c8a4132b276"}
+
+Response
+{
+    "id": 12354841,
+    "chatId": 1596562,
+    "guid": "019adc67-37e8-7418-b708-486c060f177a",
+    "chatGuid": "019adc63-f6d3-7eea-b9d7-2612dff9613b",
+    "content": "SE::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",
+    "createdAt": "2025-12-02T09:12:23.400043+09:00",
+    "creator": "d7d58640-d180-4829-bc6c-4ffbbffe9e35"
+}
+
+Request URL
+https://genai.sec.samsung.net/api/chat/v1/messages-response
+.
+.
+https://genai.sec.samsung.net/api/chat/v1/messages/019adc67-38d2-74b9-80af-d4f0928d3f93
+
+
+then message 2
+Request URL
+https://genai.sec.samsung.net/api/chat/v1/messages
+Request Method
+POST
+Status Code
+200 OK
+
+Payload
+{"chatGuid":"019adc63-f6d3-7eea-b9d7-2612dff9613b","messageType":"chat","content":"You are a professional Simplified Mandarin Chinese native translator who needs to fluently translate text into Simplified Mandarin Chinese.\n\n## Translation Rules\n1. Output only the translated content, without explanations or additional content (such as \"Here's the translation:\" or \"Translation as follows:\")\n2. The returned translation must maintain exactly the same number of paragraphs and format as the original text.\n3. If the text contains HTML tags, consider where the tags should be placed in the translation while maintaining fluency.\n4. For content that should not be translated (such as proper nouns, code, etc.), keep the original text.\n\n## Document Metadata for Context Awareness\nTitle: Google\nSummary: No summary available\n\n## Multi-paragraph Translation Rules\n1. If input contains %%, use %% in your output, if input has no %%, don't use %% in your output\n2. **CRITICAL**: Preserve exact formatting around %% - use exactly one empty line before and after, with no extra spaces, tabs, or whitespace\n\n## OUTPUT FORMAT:\n- **Single paragraph input** → Output translation directly (no separators, no extra text)\n- **Multi-paragraph input (input uses %% separators)** → Use %% as paragraph separator between translations\n\n## Examples\n\n### Multi-paragraph Input:\nParagraph A\n\n%%\n\nParagraph B\n\n%%\n\nParagraph C\n\n### Multi-paragraph Output:\nTranslation A\n\n%%\n\nTranslation B\n\n%%\n\nTranslation C\n\n### Single paragraph Input:\nSingle paragraph content\n\n### Single paragraph Output:\nDirect translation without separators\n\n\nTranslate to Simplified Mandarin Chinese:\n\n\nIndonesia\n\n%%\n\nTentang\n\n%%\n\nPeriklanan\n\n%%\n\nBisnis","attributes":{"plugins":[],"mcpServers":[],"knowledge":[],"embeddingKnowledge":[],"codeInterpreters":false},"fileUuids":[],"parentMessageGuid":"019adc67-38d2-74b9-80af-d4f0928d3f93"}
+
+the parentMessageGuid are using from previous message, so with same content the response will no CHAT_ERROR_4
+
+"""

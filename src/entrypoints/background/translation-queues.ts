@@ -1,10 +1,13 @@
+import { browser } from '#imports'
 import type { Config } from '@/types/config/config'
-import type { LLMTranslateProviderConfig, ProviderConfig } from '@/types/config/provider'
+import type { LLMTranslateProviderConfig, ProviderConfig, TranslateProviderTypes } from '@/types/config/provider'
 import type { ArticleContent } from '@/types/content'
 import { isLLMTranslateProviderConfig } from '@/types/config/provider'
 import { putBatchRequestRecord } from '@/utils/batch-request-record'
 import { DEFAULT_CONFIG } from '@/utils/constants/config'
 import { BATCH_SEPARATOR } from '@/utils/constants/prompt'
+import { TRANSLATE_PROVIDER_CHARACTER_LIMITS } from '@/utils/constants/providers'
+import { MIN_BATCH_CHARACTERS } from '@/utils/constants/translate'
 import { generateArticleSummary } from '@/utils/content/summary'
 import { cleanText } from '@/utils/content/utils'
 import { db } from '@/utils/db/dexie/db'
@@ -27,6 +30,57 @@ interface TranslateBatchData {
   hash: string
   scheduleAt: number
   content?: ArticleContent
+  maxCharsPerRequest: number
+  clientRequestId: string
+  tabId?: number
+}
+
+const clientRequestRegistry = new Map<string, { tabId?: number }>()
+const tabToClientRequestIds = new Map<number, Set<string>>()
+let hasRegisteredTabRemovalListener = false
+
+function registerClientRequest(clientRequestId: string, tabId?: number) {
+  clientRequestRegistry.set(clientRequestId, { tabId })
+
+  if (typeof tabId === 'number') {
+    const requestIds = tabToClientRequestIds.get(tabId) ?? new Set<string>()
+    requestIds.add(clientRequestId)
+    tabToClientRequestIds.set(tabId, requestIds)
+  }
+}
+
+function releaseClientRequest(clientRequestId: string) {
+  const entry = clientRequestRegistry.get(clientRequestId)
+  if (!entry)
+    return
+
+  clientRequestRegistry.delete(clientRequestId)
+
+  if (typeof entry.tabId === 'number') {
+    const requestIds = tabToClientRequestIds.get(entry.tabId)
+    if (!requestIds)
+      return
+    requestIds.delete(clientRequestId)
+    if (requestIds.size === 0)
+      tabToClientRequestIds.delete(entry.tabId)
+  }
+}
+
+const PROVIDER_BATCH_SAFE_RATIO = 0.8
+
+function resolveProviderBatchLimit(
+  providerConfig: ProviderConfig,
+  configuredLimit: number,
+): number {
+  const providerLimit = TRANSLATE_PROVIDER_CHARACTER_LIMITS[providerConfig.provider as TranslateProviderTypes]
+  if (!providerLimit) {
+    return Math.max(MIN_BATCH_CHARACTERS, configuredLimit)
+  }
+  const safeProviderBudget = Math.floor(providerLimit * PROVIDER_BATCH_SAFE_RATIO)
+  return Math.max(
+    MIN_BATCH_CHARACTERS,
+    Math.min(configuredLimit, safeProviderBudget),
+  )
 }
 
 export async function setUpRequestQueue() {
@@ -124,6 +178,7 @@ export async function setUpRequestQueue() {
     getCharacters: (data) => {
       return data.text.length
     },
+    getMaxCharactersForTask: (data) => data.maxCharsPerRequest,
     executeBatch: async (dataList) => {
       const { langConfig, providerConfig, content } = dataList[0]
       const texts = dataList.map(d => d.text)
@@ -156,48 +211,82 @@ export async function setUpRequestQueue() {
     },
   })
 
+  if (!hasRegisteredTabRemovalListener) {
+    browser.tabs.onRemoved.addListener((tabId) => {
+      const requestIds = tabToClientRequestIds.get(tabId)
+      if (!requestIds?.size)
+        return
+
+      tabToClientRequestIds.delete(tabId)
+      for (const requestId of requestIds) {
+        batchQueue.cancelTasks(data => data.clientRequestId === requestId, 'Tab closed before translation finished')
+      }
+    })
+
+    hasRegisteredTabRemovalListener = true
+  }
+
   onMessage('enqueueTranslateRequest', async (message) => {
-    const { data: { text, langConfig, providerConfig, scheduleAt, hash, articleTitle, articleTextContent } } = message
+    const { data: { text, langConfig, providerConfig, scheduleAt, hash, articleTitle, articleTextContent, clientRequestId } } = message
+    const tabId = message.sender.tab?.id
 
-    // Check cache first
-    if (hash) {
-      const cached = await db.translationCache.get(hash)
-      if (cached) {
-        return cached.translation
-      }
-    }
+    registerClientRequest(clientRequestId, tabId)
 
-    let result = ''
-    const content: ArticleContent = {
-      title: articleTitle || '',
-    }
-
-    if (isLLMTranslateProviderConfig(providerConfig)) {
-      // Generate or fetch cached summary if AI Content Aware is enabled
-      const config = await ensureInitializedConfig()
-      if (config?.translate.enableAIContentAware && articleTitle !== undefined && articleTextContent !== undefined) {
-        content.summary = await getOrGenerateSummary(articleTitle, articleTextContent, providerConfig)
+    try {
+      // Check cache first
+      if (hash) {
+        const cached = await db.translationCache.get(hash)
+        if (cached) {
+          return cached.translation
+        }
       }
 
-      const data = { text, langConfig, providerConfig, hash, scheduleAt, content }
-      result = await batchQueue.enqueue(data)
-    }
-    else {
-      // Create thunk based on type and params
-      const thunk = () => executeTranslate(text, langConfig, providerConfig)
-      result = await requestQueue.enqueue(thunk, scheduleAt, hash)
-    }
+      let result = ''
+      const content: ArticleContent = {
+        title: articleTitle || '',
+      }
 
-    // Cache the translation result if successful
-    if (result && hash) {
-      await db.translationCache.put({
-        key: hash,
-        translation: result,
-        createdAt: new Date(),
-      })
-    }
+      if (isLLMTranslateProviderConfig(providerConfig)) {
+        const effectiveBatchLimit = resolveProviderBatchLimit(providerConfig, maxCharactersPerBatch)
+        // Generate or fetch cached summary if AI Content Aware is enabled
+        const config = await ensureInitializedConfig()
+        if (config?.translate.enableAIContentAware && articleTitle !== undefined && articleTextContent !== undefined) {
+          content.summary = await getOrGenerateSummary(articleTitle, articleTextContent, providerConfig)
+        }
 
-    return result
+        const data = {
+          text,
+          langConfig,
+          providerConfig,
+          hash,
+          scheduleAt,
+          content,
+          maxCharsPerRequest: effectiveBatchLimit,
+          clientRequestId,
+          tabId,
+        }
+        result = await batchQueue.enqueue(data)
+      }
+      else {
+        // Create thunk based on type and params
+        const thunk = () => executeTranslate(text, langConfig, providerConfig)
+        result = await requestQueue.enqueue(thunk, scheduleAt, hash)
+      }
+
+      // Cache the translation result if successful
+      if (result && hash) {
+        await db.translationCache.put({
+          key: hash,
+          translation: result,
+          createdAt: new Date(),
+        })
+      }
+
+      return result
+    }
+    finally {
+      releaseClientRequest(clientRequestId)
+    }
   })
 
   onMessage('setTranslateRequestQueueConfig', (message) => {

@@ -26,6 +26,22 @@ import {
   translatingNodes,
 } from './translation-state'
 
+const MAX_TRANSLATION_RETRIES = 2
+const translationRetryCounts = new WeakMap<Node, number>()
+
+function shouldRetryTarget(node: Node): boolean {
+  const current = translationRetryCounts.get(node) ?? 0
+  if (current >= MAX_TRANSLATION_RETRIES)
+    return false
+
+  translationRetryCounts.set(node, current + 1)
+  return true
+}
+
+function resetRetryCount(node: Node) {
+  translationRetryCounts.delete(node)
+}
+
 export async function translateNodes(
   nodes: ChildNode[],
   walkId: string,
@@ -120,7 +136,16 @@ export async function translateNodesBilingualMode(
       clearTranslationAbortController(translatedWrapperNode)
     }
 
-    if (abortController.signal.aborted || !translatedWrapperNode.isConnected) {
+    if (abortController.signal.aborted) {
+      return
+    }
+
+    if (!translatedWrapperNode.isConnected) {
+      if (!toggle && targetNode.isConnected && shouldRetryTarget(targetNode)) {
+        queueMicrotask(() => {
+          void translateNodesBilingualMode(nodes, walkId, config, toggle, forceBlockTranslation)
+        })
+      }
       return
     }
 
@@ -143,6 +168,7 @@ export async function translateNodesBilingualMode(
       config.translate.translationNodeStyle,
       forceBlockTranslation,
     )
+    resetRetryCount(targetNode)
   }
   finally {
     transNodes.forEach(node => translatingNodes.delete(node))
@@ -306,7 +332,16 @@ export async function translateNodeTranslationOnlyMode(
       clearTranslationAbortController(translatedWrapperNode)
     }
 
-    if (abortController.signal.aborted || !translatedWrapperNode.isConnected) {
+    if (abortController.signal.aborted) {
+      return
+    }
+
+    if (!translatedWrapperNode.isConnected) {
+      if (!toggle && targetNode.isConnected && shouldRetryTarget(targetNode)) {
+        queueMicrotask(() => {
+          void translateNodeTranslationOnlyMode(nodes, walkId, config, toggle)
+        })
+      }
       return
     }
 
@@ -317,6 +352,7 @@ export async function translateNodeTranslationOnlyMode(
     }
 
     translatedWrapperNode.innerHTML = translatedText
+    resetRetryCount(targetNode)
 
     // Batch final DOM mutations to reduce layout thrashing
     batchDOMOperation(() => {

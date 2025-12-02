@@ -171,12 +171,15 @@ export async function translateText(text: string) {
     { title: articleTitle, textContent: articleTextContent },
   )
 
+  const clientRequestId = crypto.randomUUID()
+
   return await sendMessage('enqueueTranslateRequest', {
     text,
     langConfig,
     providerConfig,
     scheduleAt: Date.now(),
     hash: Sha256Hex(...hashComponents),
+    clientRequestId,
     articleTitle,
     articleTextContent,
   })

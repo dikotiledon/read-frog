@@ -1,7 +1,25 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GenAIProviderConfig } from '@/types/config/provider'
 import { GENAI_CHAT_IDLE_TTL_MS } from '../constants'
-import { acquireGenAIChat, __private__ } from '../chat-pool'
+const storageMock = vi.hoisted(() => {
+  const state: Record<string, any> = {}
+  const storage = {
+    getItem: vi.fn(async (key: string) => state[key] ?? null),
+    setItem: vi.fn(async (key: string, value: any) => {
+      state[key] = value
+    }),
+  }
+  return { state, storage }
+})
+
+const { acquireGenAIChat, __private__ } = await import('../chat-pool')
+__private__.setStorageOverrideForTest(storageMock.storage as any)
+
+function resetStorageState() {
+  Object.keys(storageMock.state).forEach(key => delete storageMock.state[key])
+  storageMock.storage.getItem.mockClear()
+  storageMock.storage.setItem.mockClear()
+}
 
 const baseProviderConfig: GenAIProviderConfig = {
   id: 'genai-default',
@@ -25,8 +43,9 @@ const baseProviderConfig: GenAIProviderConfig = {
 }
 
 describe('acquireGenAIChat', () => {
-  afterEach(() => {
-    __private__.clearPoolsForTest()
+  afterEach(async () => {
+    await __private__.clearPoolsForTest()
+    resetStorageState()
     vi.useRealTimers()
   })
 
@@ -87,5 +106,41 @@ describe('acquireGenAIChat', () => {
     const leaseC = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
     expect(leaseC.parentMessageGuid).toBeNull()
     leaseC.release()
+  })
+
+  it('persists pending message guid so busy chats can be skipped later', async () => {
+    const createChat = vi.fn().mockResolvedValue('chat-pending')
+
+    const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    expect(leaseA.pendingMessageGuid).toBeNull()
+    leaseA.setPendingMessageGuid('user-1')
+    leaseA.release()
+
+    const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    expect(leaseB.pendingMessageGuid).toBe('user-1')
+    leaseB.invalidate()
+
+    const leaseC = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+    expect(leaseC.pendingMessageGuid).toBeNull()
+    leaseC.release()
+  })
+
+  it('hydrates persisted chat state on first acquisition', async () => {
+    const now = Date.now()
+    storageMock.state['local:genai_chat_pool'] = {
+      'genai-default:translate:https://genai.sec.samsung.net': {
+        chatGuid: 'persisted-chat',
+        lastMessageGuid: 'assistant-prev',
+        lastUsed: now,
+      },
+    }
+
+    const createChat = vi.fn()
+    const lease = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
+
+    expect(createChat).not.toHaveBeenCalled()
+    expect(lease.chatGuid).toBe('persisted-chat')
+    expect(lease.parentMessageGuid).toBe('assistant-prev')
+    lease.release()
   })
 })

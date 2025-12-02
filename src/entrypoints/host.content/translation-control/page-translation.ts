@@ -89,20 +89,30 @@ export class PageTranslationManager implements IPageTranslationManager {
     const walkId = crypto.randomUUID()
     this.walkId = walkId
     this.intersectionObserver = new IntersectionObserver(async (entries, observer) => {
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          if (isHTMLElement(entry.target)) {
-            if (!entry.target.closest(`.${CONTENT_WRAPPER_CLASS}`)) {
-              const currentConfig = await getConfigFromStorage()
-              if (!currentConfig) {
-                logger.error('Global config is not initialized')
-                return
-              }
-              void translateWalkedElement(entry.target, walkId, currentConfig)
+      const prioritizedEntries = entries
+        .slice()
+        .sort((a, b) => {
+          const ratioDiff = (b.intersectionRatio ?? 0) - (a.intersectionRatio ?? 0)
+          if (ratioDiff !== 0)
+            return ratioDiff
+
+          const aDistance = Math.abs(a.boundingClientRect?.top ?? 0)
+          const bDistance = Math.abs(b.boundingClientRect?.top ?? 0)
+          return aDistance - bDistance
+        })
+
+      for (const entry of prioritizedEntries) {
+        if (entry.isIntersecting && isHTMLElement(entry.target)) {
+          if (!entry.target.closest(`.${CONTENT_WRAPPER_CLASS}`)) {
+            const currentConfig = await getConfigFromStorage()
+            if (!currentConfig) {
+              logger.error('Global config is not initialized')
+              return
             }
+            void translateWalkedElement(entry.target, walkId, currentConfig)
           }
-          observer.unobserve(entry.target)
         }
+        observer.unobserve(entry.target)
       }
     }, this.intersectionOptions)
 

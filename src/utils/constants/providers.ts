@@ -1,5 +1,13 @@
 import type { Theme } from '@/components/providers/theme-provider'
-import type { AllProviderTypes, APIProviderTypes, ProviderConfig, ProvidersConfig, ReadModels, TranslateLLMModels } from '@/types/config/provider'
+import type {
+  AllProviderTypes,
+  APIProviderTypes,
+  ProviderConfig,
+  ProvidersConfig,
+  ReadModels,
+  TranslateLLMModels,
+  TranslateProviderTypes,
+} from '@/types/config/provider'
 import { i18n } from '#i18n'
 import customProviderLogo from '@/assets/providers/custom-provider.svg'
 import deeplxLogoDark from '@/assets/providers/deeplx-dark.svg'
@@ -244,6 +252,10 @@ export const DEFAULT_TRANSLATE_MODELS: TranslateLLMModels = {
     isCustomModel: false,
     customModel: null,
   },
+}
+
+export const TRANSLATE_PROVIDER_CHARACTER_LIMITS: Partial<Record<TranslateProviderTypes, number>> = {
+  genai: 12_000,
 }
 
 export const PROVIDER_ITEMS: Record<AllProviderTypes, { logo: (theme: Theme) => string, name: string, website: string }>
