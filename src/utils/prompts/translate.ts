@@ -1,4 +1,5 @@
 import type { ArticleContent } from '@/types/content'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import { getConfigFromStorage } from '@/utils/config/config'
 import { DEFAULT_CONFIG } from '../constants/config'
 import { DEFAULT_BATCH_TRANSLATE_PROMPT, DEFAULT_TRANSLATE_PROMPT, DEFAULT_TRANSLATE_SYSTEM_PROMPT, getTokenCellText, INPUT, SUMMARY, TARGET_LANG, TITLE } from '../constants/prompt'
@@ -6,6 +7,7 @@ import { DEFAULT_BATCH_TRANSLATE_PROMPT, DEFAULT_TRANSLATE_PROMPT, DEFAULT_TRANS
 export interface TranslatePromptOptions {
   isBatch?: boolean
   content?: ArticleContent
+  chunkMetadata?: TranslationChunkMetadata
 }
 
 export interface TranslatePromptResult {
@@ -48,6 +50,20 @@ ${DEFAULT_BATCH_TRANSLATE_PROMPT}`
   // Build title and summary replacement values
   const title = options?.content?.title || 'No title available'
   const summary = options?.content?.summary || 'No summary available'
+
+  if (options?.chunkMetadata && (typeof options.chunkMetadata.index === 'number' || typeof options.chunkMetadata.total === 'number' || options.chunkMetadata.groupId)) {
+    const indexPart = typeof options.chunkMetadata.index === 'number'
+      ? `part ${options.chunkMetadata.index}${typeof options.chunkMetadata.total === 'number' ? ` of ${options.chunkMetadata.total}` : ''}`
+      : null
+    const totalOnlyPart = !indexPart && typeof options.chunkMetadata.total === 'number'
+      ? `one of ${options.chunkMetadata.total} parts`
+      : null
+    const groupPart = options.chunkMetadata.groupId ? `document id ${options.chunkMetadata.groupId}` : null
+    const chunkDescriptor = [indexPart, totalOnlyPart, groupPart].filter(Boolean).join(', ')
+    const chunkContext = chunkDescriptor || 'one segment of a larger document'
+    const chunkPrompt = `Chunk context: You are translating ${chunkContext}. Maintain consistent tone, terminology, and formatting with the other segments even if you only see this snippet. Do not mention chunk numbers or metadata in the output.`
+    systemPrompt = `${systemPrompt}\n\n${chunkPrompt}`.trim()
+  }
 
   // Replace tokens in both prompts
   const replaceTokens = (text: string) =>

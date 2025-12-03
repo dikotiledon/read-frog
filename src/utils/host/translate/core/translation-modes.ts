@@ -25,6 +25,7 @@ import {
   registerTranslationAbortController,
   translatingNodes,
 } from './translation-state'
+import { nextChunkMetadata } from '../chunk-registry'
 
 const MAX_TRANSLATION_RETRIES = 2
 const translationRetryCounts = new WeakMap<Node, number>()
@@ -124,12 +125,14 @@ export async function translateNodesBilingualMode(
 
     let realTranslatedText: string | undefined
     try {
+      const chunkMetadata = nextChunkMetadata(walkId)
       realTranslatedText = await getTranslatedTextAndRemoveSpinner(
         nodes,
         textContent,
         spinner,
         translatedWrapperNode,
         abortController.signal,
+        { chunkMetadata },
       )
     }
     finally {
@@ -320,12 +323,14 @@ export async function translateNodeTranslationOnlyMode(
 
     let translatedText: string | undefined
     try {
+      const chunkMetadata = nextChunkMetadata(walkId)
       translatedText = await getTranslatedTextAndRemoveSpinner(
         nodes,
         textContent,
         spinner,
         translatedWrapperNode,
         abortController.signal,
+        { chunkMetadata },
       )
     }
     finally {

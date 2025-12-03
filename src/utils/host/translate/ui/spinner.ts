@@ -4,6 +4,7 @@ import textSmallCSS from '@/assets/styles/text-small.css?inline'
 import themeCSS from '@/assets/styles/theme.css?inline'
 import { TranslationError } from '@/components/translation/error'
 import { createReactShadowHost } from '@/utils/react-shadow-host/create-shadow-host'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import { TRANSLATION_ERROR_CONTAINER_CLASS } from '../../../constants/dom-labels'
 import { getOwnerDocument } from '../../dom/node'
 import { translateText } from '../translate-text'
@@ -70,9 +71,12 @@ export async function getTranslatedTextAndRemoveSpinner(
   spinner: HTMLElement,
   translatedWrapperNode: HTMLElement,
   signal?: AbortSignal,
+  options?: { chunkMetadata?: TranslationChunkMetadata },
 ): Promise<string | undefined> {
   let translatedText: string | undefined
-  const translationPromise = translateText(textContent)
+  const translationPromise = translateText(textContent, {
+    chunkMetadata: options?.chunkMetadata,
+  })
 
   const abortPromise = signal
     ? new Promise<never>((_, reject) => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GenAIProviderConfig } from '@/types/config/provider'
-import { GENAI_CHAT_IDLE_TTL_MS } from '../constants'
+import { GENAI_CHAT_IDLE_TTL_MS, GENAI_CHAT_MAX_SLOTS_PER_KEY } from '../constants'
 const storageMock = vi.hoisted(() => {
   const state: Record<string, any> = {}
   const storage = {
@@ -12,7 +12,7 @@ const storageMock = vi.hoisted(() => {
   return { state, storage }
 })
 
-const { acquireGenAIChat, __private__ } = await import('../chat-pool')
+const { acquireGenAIChat, scaleGenAIChatPool, __private__ } = await import('../chat-pool')
 __private__.setStorageOverrideForTest(storageMock.storage as any)
 
 function resetStorageState() {
@@ -53,10 +53,10 @@ describe('acquireGenAIChat', () => {
     const createChat = vi.fn().mockResolvedValue('chat-1')
 
     const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
-    leaseA.release()
+    await leaseA.release()
 
     const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
-    leaseB.release()
+    await leaseB.release()
 
     expect(createChat).toHaveBeenCalledTimes(1)
     expect(leaseB.chatGuid).toBe('chat-1')
@@ -66,10 +66,10 @@ describe('acquireGenAIChat', () => {
     const createChat = vi.fn().mockResolvedValueOnce('chat-1').mockResolvedValueOnce('chat-2')
 
     const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
-    leaseA.invalidate()
+    await leaseA.invalidate()
 
     const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
-    leaseB.release()
+    await leaseB.release()
 
     expect(createChat).toHaveBeenCalledTimes(2)
     expect(leaseB.chatGuid).toBe('chat-2')
@@ -80,12 +80,12 @@ describe('acquireGenAIChat', () => {
     const createChat = vi.fn().mockResolvedValueOnce('chat-ttl-1').mockResolvedValueOnce('chat-ttl-2')
 
     const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
-    leaseA.release()
+    await leaseA.release()
 
     await vi.advanceTimersByTimeAsync(GENAI_CHAT_IDLE_TTL_MS + 1)
 
     const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
-    leaseB.release()
+    await leaseB.release()
 
     expect(createChat).toHaveBeenCalledTimes(2)
     expect(leaseB.chatGuid).toBe('chat-ttl-2')
@@ -97,15 +97,15 @@ describe('acquireGenAIChat', () => {
     const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
     expect(leaseA.parentMessageGuid).toBeNull()
     leaseA.setParentMessageGuid('assistant-1')
-    leaseA.release()
+    await leaseA.release()
 
     const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
     expect(leaseB.parentMessageGuid).toBe('assistant-1')
-    leaseB.invalidate()
+    await leaseB.invalidate()
 
     const leaseC = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
     expect(leaseC.parentMessageGuid).toBeNull()
-    leaseC.release()
+    await leaseC.release()
   })
 
   it('persists pending message guid so busy chats can be skipped later', async () => {
@@ -114,24 +114,31 @@ describe('acquireGenAIChat', () => {
     const leaseA = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
     expect(leaseA.pendingMessageGuid).toBeNull()
     leaseA.setPendingMessageGuid('user-1')
-    leaseA.release()
+    await leaseA.release()
 
     const leaseB = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
     expect(leaseB.pendingMessageGuid).toBe('user-1')
-    leaseB.invalidate()
+    await leaseB.invalidate()
 
     const leaseC = await acquireGenAIChat(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', createChat)
     expect(leaseC.pendingMessageGuid).toBeNull()
-    leaseC.release()
+    await leaseC.release()
   })
 
   it('hydrates persisted chat state on first acquisition', async () => {
     const now = Date.now()
     storageMock.state['local:genai_chat_pool'] = {
       'genai-default:translate:https://genai.sec.samsung.net': {
-        chatGuid: 'persisted-chat',
-        lastMessageGuid: 'assistant-prev',
-        lastUsed: now,
+        slots: [
+          {
+            slotId: 'slot-1',
+            chatGuid: 'persisted-chat',
+            lastMessageGuid: 'assistant-prev',
+            lastUsed: now,
+            pendingMessageGuid: null,
+            pendingSince: null,
+          },
+        ],
       },
     }
 
@@ -141,6 +148,28 @@ describe('acquireGenAIChat', () => {
     expect(createChat).not.toHaveBeenCalled()
     expect(lease.chatGuid).toBe('persisted-chat')
     expect(lease.parentMessageGuid).toBe('assistant-prev')
-    lease.release()
+    await lease.release()
+  })
+
+  it('warms idle slots up to the requested capacity', async () => {
+    const createChat = vi.fn().mockResolvedValueOnce('warm-1').mockResolvedValueOnce('warm-2')
+
+    await scaleGenAIChatPool(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', 2, createChat)
+
+    const snapshot = __private__.getPoolSnapshot()
+    const entry = snapshot.get('genai-default:translate:https://genai.sec.samsung.net')
+    expect(entry?.slots).toHaveLength(2)
+    entry?.slots.forEach(slot => expect(slot.busy).toBe(false))
+    expect(createChat).toHaveBeenCalledTimes(2)
+  })
+
+  it('respects the max slots per key when warming', async () => {
+    const createChat = vi.fn().mockImplementation(() => Promise.resolve(`chat-${crypto.randomUUID()}`))
+
+    await scaleGenAIChatPool(baseProviderConfig, baseProviderConfig.baseURL!, 'translate', 10, createChat)
+
+    const snapshot = __private__.getPoolSnapshot()
+    const entry = snapshot.get('genai-default:translate:https://genai.sec.samsung.net')
+    expect(entry?.slots.length).toBeLessThanOrEqual(GENAI_CHAT_MAX_SLOTS_PER_KEY)
   })
 })

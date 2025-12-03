@@ -1,12 +1,13 @@
 import type { EventSourceMessage } from 'eventsource-parser'
 import type { GenAIProviderConfig } from '@/types/config/provider'
 import type { ArticleContent } from '@/types/content'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import { createParser } from 'eventsource-parser'
 import { logger } from '@/utils/logger'
 import { getTranslatePrompt } from '@/utils/prompts/translate'
 import { GENAI_ENDPOINTS, GENAI_MESSAGE_POLL_INTERVAL_MS, GENAI_MESSAGE_POLL_MAX_BACKOFF_MULTIPLIER, GENAI_MESSAGE_POLL_TIMEOUT_MS, GENAI_STREAM_COMPLETE_EVENTS } from './constants'
-import type { GenAIChatLease } from './chat-pool'
-import { acquireGenAIChat } from './chat-pool'
+import type { GenAIChatLease, GenAIChatPurpose } from './chat-pool'
+import { acquireGenAIChat, scaleGenAIChatPool } from './chat-pool'
 import { resolveGenAIModelGuid } from './models'
 import { ensureGenAISession } from './session'
 
@@ -183,7 +184,7 @@ async function invalidateChatWithRemoteDelete(baseURL: string, chatLease: GenAIC
     })
   }
   finally {
-    chatLease.invalidate()
+    await chatLease.invalidate()
   }
 }
 
@@ -312,7 +313,7 @@ type WaitForContentOptions = {
   timeoutMs?: number
   sleep?: (ms: number) => Promise<void>
   fallbackContent?: string | null
-  onInvalidateChat?: () => void
+  onInvalidateChat?: () => void | Promise<void>
 }
 
 type MessageContentResult = {
@@ -545,7 +546,7 @@ async function waitForMessageContent(
           statusText: error.statusText,
         }
 
-        options?.onInvalidateChat?.()
+        await options?.onInvalidateChat?.()
 
         if (hasFallback) {
           logger.warn('[GenAI] Response message missing, using SSE fallback content', logContext)
@@ -694,7 +695,7 @@ export async function genaiTranslate(
   text: string,
   targetLangName: string,
   providerConfig: GenAIProviderConfig,
-  options?: { isBatch?: boolean, content?: ArticleContent },
+  options?: { isBatch?: boolean, content?: ArticleContent, chunkMetadata?: TranslationChunkMetadata },
 ): Promise<string> {
   const baseURL = await ensureGenAISession(providerConfig)
 
@@ -786,7 +787,7 @@ export async function genaiTranslate(
     }
     catch (error) {
       if (shouldInvalidateChatFromHttpError(error))
-        chatLease.invalidate()
+        await chatLease.invalidate()
       throw error
     }
     finally {
@@ -796,7 +797,7 @@ export async function genaiTranslate(
       if (shouldResetChat)
         await invalidateChatWithRemoteDelete(baseURL, chatLease, resetReason ?? 'pending-message')
       else
-        chatLease.release()
+        await chatLease.release()
     }
   }
 
@@ -899,7 +900,7 @@ export async function genaiGenerateText(
     }
     catch (error) {
       if (shouldInvalidateChatFromHttpError(error))
-        chatLease.invalidate()
+        await chatLease.invalidate()
       throw error
     }
     finally {
@@ -909,11 +910,23 @@ export async function genaiGenerateText(
       if (shouldResetChat)
         await invalidateChatWithRemoteDelete(baseURL, chatLease, resetReason ?? 'pending-message')
       else
-        chatLease.release()
+        await chatLease.release()
     }
   }
 
   throw new Error('[GenAI] Unable to obtain an available chat conversation')
+}
+
+export async function warmGenAIChatPool(
+  providerConfig: GenAIProviderConfig,
+  purpose: GenAIChatPurpose,
+  desiredSlots: number,
+): Promise<void> {
+  if (desiredSlots <= 0)
+    return
+
+  const baseURL = await ensureGenAISession(providerConfig)
+  await scaleGenAIChatPool(providerConfig, baseURL, purpose, desiredSlots, () => createChat(baseURL))
 }
 
 export const __private__ = {

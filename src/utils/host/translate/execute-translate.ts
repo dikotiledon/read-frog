@@ -1,6 +1,7 @@
 import type { Config } from '@/types/config/config'
 import type { ProviderConfig } from '@/types/config/provider'
 import type { ArticleContent } from '@/types/content'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import { ISO6393_TO_6391, LANG_CODE_TO_EN_NAME } from '@read-frog/definitions'
 import { isLLMTranslateProviderConfig, isNonAPIProvider, isPureAPIProvider } from '@/types/config/provider'
 import { aiTranslate } from './api/ai'
@@ -16,6 +17,7 @@ export async function executeTranslate(
     forceBackgroundFetch?: boolean
     isBatch?: boolean
     content?: ArticleContent
+    chunkMetadata?: TranslationChunkMetadata
   },
 ) {
   const cleanText = text.replace(/\u200B/g, '').trim()

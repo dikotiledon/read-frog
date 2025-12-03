@@ -3,6 +3,7 @@ import type { Config } from '@/types/config/config'
 import type { ProviderConfig } from '@/types/config/provider'
 import type { BatchQueueConfig, RequestQueueConfig } from '@/types/config/translate'
 import type { ProxyRequest, ProxyResponse } from '@/types/proxy-fetch'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import { defineExtensionMessaging } from '@webext-core/messaging'
 
 interface ProtocolMap {
@@ -39,6 +40,7 @@ interface ProtocolMap {
     clientRequestId: string
     articleTitle?: string
     articleTextContent?: string
+    chunkMetadata?: TranslationChunkMetadata
   }) => Promise<string>
   setTranslateRequestQueueConfig: (data: Partial<RequestQueueConfig>) => void
   setTranslateBatchQueueConfig: (data: Partial<BatchQueueConfig>) => void

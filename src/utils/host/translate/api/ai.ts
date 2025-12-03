@@ -1,5 +1,6 @@
 import type { LLMTranslateProviderConfig } from '@/types/config/provider'
 import type { ArticleContent } from '@/types/content'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import { generateText } from 'ai'
 import { getProviderOptions } from '@/utils/constants/model'
 import { getTranslatePrompt } from '@/utils/prompts/translate'
@@ -11,7 +12,7 @@ export async function aiTranslate(
   text: string,
   targetLangName: string,
   providerConfig: LLMTranslateProviderConfig,
-  options?: { isBatch?: boolean, content?: ArticleContent },
+  options?: { isBatch?: boolean, content?: ArticleContent, chunkMetadata?: TranslationChunkMetadata },
 ) {
   if (isGenAIProviderConfig(providerConfig))
     return await genaiTranslate(text, targetLangName, providerConfig, options)

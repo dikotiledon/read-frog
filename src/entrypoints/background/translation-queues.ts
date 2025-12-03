@@ -1,8 +1,9 @@
 import { browser } from '#imports'
 import type { Config } from '@/types/config/config'
-import type { LLMTranslateProviderConfig, ProviderConfig, TranslateProviderTypes } from '@/types/config/provider'
+import type { GenAIProviderConfig, LLMTranslateProviderConfig, ProviderConfig, TranslateProviderTypes } from '@/types/config/provider'
 import type { ArticleContent } from '@/types/content'
-import { isLLMTranslateProviderConfig } from '@/types/config/provider'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
+import { isGenAIProviderConfig, isLLMTranslateProviderConfig } from '@/types/config/provider'
 import { putBatchRequestRecord } from '@/utils/batch-request-record'
 import { DEFAULT_CONFIG } from '@/utils/constants/config'
 import { BATCH_SEPARATOR } from '@/utils/constants/prompt'
@@ -17,6 +18,8 @@ import { logger } from '@/utils/logger'
 import { onMessage } from '@/utils/message'
 import { BatchQueue } from '@/utils/request/batch-queue'
 import { RequestQueue } from '@/utils/request/request-queue'
+import { warmGenAIChatPool } from '@/utils/genai/client'
+import { GENAI_CHAT_MAX_SLOTS_PER_KEY } from '@/utils/genai/constants'
 import { ensureInitializedConfig } from './config'
 
 export function parseBatchResult(result: string): string[] {
@@ -33,11 +36,13 @@ interface TranslateBatchData {
   maxCharsPerRequest: number
   clientRequestId: string
   tabId?: number
+  chunkMetadata?: TranslationChunkMetadata
 }
 
 const clientRequestRegistry = new Map<string, { tabId?: number }>()
 const tabToClientRequestIds = new Map<number, Set<string>>()
 let hasRegisteredTabRemovalListener = false
+const genaiBacklogCounts = new Map<string, number>()
 
 function registerClientRequest(clientRequestId: string, tabId?: number) {
   clientRequestRegistry.set(clientRequestId, { tabId })
@@ -64,6 +69,45 @@ function releaseClientRequest(clientRequestId: string) {
     if (requestIds.size === 0)
       tabToClientRequestIds.delete(entry.tabId)
   }
+}
+
+function getGenAIBacklogKey(providerConfig: GenAIProviderConfig): string {
+  const baseURL = providerConfig.baseURL?.trim().toLowerCase() ?? ''
+  return `${providerConfig.id}:${baseURL}`
+}
+
+function incrementGenAIBacklog(providerConfig: GenAIProviderConfig): number {
+  const key = getGenAIBacklogKey(providerConfig)
+  const next = (genaiBacklogCounts.get(key) ?? 0) + 1
+  genaiBacklogCounts.set(key, next)
+  return next
+}
+
+function decrementGenAIBacklog(providerConfig: GenAIProviderConfig): number {
+  const key = getGenAIBacklogKey(providerConfig)
+  const next = Math.max((genaiBacklogCounts.get(key) ?? 1) - 1, 0)
+  if (next === 0)
+    genaiBacklogCounts.delete(key)
+  else
+    genaiBacklogCounts.set(key, next)
+  return next
+}
+
+function computeDesiredGenAISlots(backlogSize: number): number {
+  if (backlogSize <= 1)
+    return 1
+  return Math.min(GENAI_CHAT_MAX_SLOTS_PER_KEY, Math.max(1, Math.ceil(backlogSize / 2)))
+}
+
+function requestGenAIWarmSlots(providerConfig: GenAIProviderConfig, backlogSize: number) {
+  const desiredSlots = computeDesiredGenAISlots(backlogSize)
+  void warmGenAIChatPool(providerConfig, 'translate', desiredSlots).catch((error) => {
+    logger.warn('Failed to warm GenAI chat slots', {
+      providerId: providerConfig.id,
+      desiredSlots,
+      error,
+    })
+  })
 }
 
 const PROVIDER_BATCH_SAFE_RATIO = 0.8
@@ -105,6 +149,32 @@ export async function setUpRequestQueue() {
     maxRetries,
     baseRetryDelayMs,
   })
+
+  const enqueueLLMRequest = async (data: TranslateBatchData) => {
+    const { text, langConfig, providerConfig, hash, scheduleAt, content, chunkMetadata } = data
+    const thunk = async () => {
+      await putBatchRequestRecord({ originalRequestCount: 1, providerConfig })
+      return executeTranslate(text, langConfig, providerConfig, { content, chunkMetadata })
+    }
+    return requestQueue.enqueue(thunk, scheduleAt, hash)
+  }
+
+  const enqueueGenAIRequest = async (data: TranslateBatchData & { providerConfig: GenAIProviderConfig }) => {
+    const backlogSize = incrementGenAIBacklog(data.providerConfig)
+    requestGenAIWarmSlots(data.providerConfig, backlogSize)
+
+    try {
+      const { text, langConfig, providerConfig, hash, scheduleAt, content, chunkMetadata } = data
+      const runTask = async () => {
+        await putBatchRequestRecord({ originalRequestCount: 1, providerConfig })
+        return executeTranslate(text, langConfig, providerConfig, { content, chunkMetadata })
+      }
+      return await requestQueue.enqueue(runTask, scheduleAt, hash)
+    }
+    finally {
+      decrementGenAIBacklog(data.providerConfig)
+    }
+  }
 
   /**
    * Get cached summary or generate a new one (using requestQueue for deduplication)
@@ -180,6 +250,9 @@ export async function setUpRequestQueue() {
     },
     getMaxCharactersForTask: (data) => data.maxCharsPerRequest,
     executeBatch: async (dataList) => {
+      if (dataList.length === 1)
+        return [await enqueueLLMRequest(dataList[0])]
+
       const { langConfig, providerConfig, content } = dataList[0]
       const texts = dataList.map(d => d.text)
       const batchText = texts.join(`\n\n${BATCH_SEPARATOR}\n\n`)
@@ -195,12 +268,7 @@ export async function setUpRequestQueue() {
       return requestQueue.enqueue(batchThunk, earliestScheduleAt, hash)
     },
     executeIndividual: async (data) => {
-      const { text, langConfig, providerConfig, hash, scheduleAt, content } = data
-      const thunk = async () => {
-        await putBatchRequestRecord({ originalRequestCount: 1, providerConfig })
-        return executeTranslate(text, langConfig, providerConfig, { content })
-      }
-      return requestQueue.enqueue(thunk, scheduleAt, hash)
+      return enqueueLLMRequest(data)
     },
     onError: (error, context) => {
       const errorType = context.isFallback ? 'Individual request' : 'Batch request'
@@ -227,7 +295,7 @@ export async function setUpRequestQueue() {
   }
 
   onMessage('enqueueTranslateRequest', async (message) => {
-    const { data: { text, langConfig, providerConfig, scheduleAt, hash, articleTitle, articleTextContent, clientRequestId } } = message
+    const { data: { text, langConfig, providerConfig, scheduleAt, hash, articleTitle, articleTextContent, clientRequestId, chunkMetadata } } = message
     const tabId = message.sender.tab?.id
 
     registerClientRequest(clientRequestId, tabId)
@@ -264,12 +332,17 @@ export async function setUpRequestQueue() {
           maxCharsPerRequest: effectiveBatchLimit,
           clientRequestId,
           tabId,
+          chunkMetadata,
         }
-        result = await batchQueue.enqueue(data)
+
+        if (isGenAIProviderConfig(providerConfig))
+          result = await enqueueGenAIRequest({ ...data, providerConfig })
+        else
+          result = await batchQueue.enqueue(data)
       }
       else {
         // Create thunk based on type and params
-        const thunk = () => executeTranslate(text, langConfig, providerConfig)
+        const thunk = () => executeTranslate(text, langConfig, providerConfig, { chunkMetadata })
         result = await requestQueue.enqueue(thunk, scheduleAt, hash)
       }
 

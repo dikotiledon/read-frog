@@ -123,10 +123,10 @@ export const testSeries: TestSeriesObject = {
         },
         requestQueueConfig: {
           capacity: 400,
-          rate: 8,
-          timeoutMs: 45000,
-          maxRetries: 2,
-          baseRetryDelayMs: 1000,
+          rate: 12,
+          timeoutMs: 120000,
+          maxRetries: 4,
+          baseRetryDelayMs: 4000,
         },
         batchQueueConfig: {
           maxCharactersPerBatch: 9000,
@@ -252,9 +252,9 @@ export const testSeries: TestSeriesObject = {
         requestQueueConfig: {
           capacity: 200,
           rate: 2,
-          timeoutMs: 45000,
+          timeoutMs: 120000,
           maxRetries: 2,
-          baseRetryDelayMs: 1000,
+          baseRetryDelayMs: 4000,
         },
         batchQueueConfig: {
           maxCharactersPerBatch: 9000,

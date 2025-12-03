@@ -4,6 +4,7 @@ import { hasNoWalkAncestor, isDontWalkIntoButTranslateAsChildElement, isHTMLElem
 import { deepQueryTopLevelSelector } from '@/utils/host/dom/find'
 import { walkAndLabelElement } from '@/utils/host/dom/traversal'
 import { removeAllTranslatedWrapperNodes, translateWalkedElement } from '@/utils/host/translate/node-manipulation'
+import { clearChunkRegistry, recordChunkTargets } from '@/utils/host/translate/chunk-registry'
 import { logger } from '@/utils/logger'
 import { sendMessage } from '@/utils/message'
 
@@ -79,6 +80,8 @@ export class PageTranslationManager implements IPageTranslationManager {
       enabled: true,
     })
 
+    clearChunkRegistry()
+
     const config = await getConfigFromStorage()
     if (!config) {
       console.warn('Config is not initialized')
@@ -130,9 +133,11 @@ export class PageTranslationManager implements IPageTranslationManager {
       return
     }
 
+    const previousWalkId = this.walkId
     this.isAutoTranslating = false
-    this.walkId = null
     this.dontWalkIntoElementsCache = new WeakSet()
+    this.walkId = null
+    clearChunkRegistry(previousWalkId)
 
     void sendMessage('setEnablePageTranslationOnContentScript', {
       enabled: false,
@@ -221,6 +226,7 @@ export class PageTranslationManager implements IPageTranslationManager {
     walkAndLabelElement(container, this.walkId, config)
     // if container itself has paragraph and the id
     if (container.hasAttribute('data-read-frog-paragraph') && container.getAttribute('data-read-frog-walked') === this.walkId) {
+      recordChunkTargets(this.walkId, [container])
       observer.observe(container)
       return
     }
@@ -233,6 +239,7 @@ export class PageTranslationManager implements IPageTranslationManager {
       //  • the ancestor is *not* inside container
       return !ancestor || !container.contains(ancestor)
     })
+    recordChunkTargets(this.walkId, topLevelParagraphs)
     topLevelParagraphs.forEach(el => observer.observe(el))
   }
 

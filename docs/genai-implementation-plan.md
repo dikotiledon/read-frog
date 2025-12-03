@@ -11,12 +11,16 @@
 - **Streaming reliability**: `readEventStream` now captures every visible CHUNK token and returns both the final `guid` and concatenated content, so short answers (e.g., "嗨") are never lost when Samsung emits metadata-only terminal events.
 - **Message polling**: After SSE completion we poll `/api/chat/v1/messages/{guid}` until the body contains text; if Samsung reports `status: SUCCESS` or any `responseCode` while the payload is still empty, we fall back to the streamed content instead of surfacing a blank translation.
 - **Test coverage**: `src/utils/genai/__tests__/client.test.ts` exercises the SSE fallback path plus the new polling helper (success, timeout, failure, and fallback scenarios), and the suite is green.
+## Latest Progress (Dec 3, 2025)
+- **Chat pool stability**: Fixed a regression where newly created pool entries were pruned before their first lease, which caused every chunk to open a fresh conversation. Slots now survive releases so subsequent chunks reuse existing chats (and their parent message chains) instead of hammering `/api/chat/v1/chats` for each request.
+
 
 ## Latest Progress (Dec 2, 2025)
 - **Chat pool persistence**: `src/utils/genai/chat-pool.ts` now records both the last assistant guid **and** the last in-flight user message guid (`pendingMessageGuid`). If a tab closes mid-stream, the next lease sees the pending guid and skips or resets that conversation instead of reusing a broken parent chain.
 - **Automatic chat resets**: `genaiTranslate`/`genaiGenerateText` maintain up to three recovery attempts. When Samsung returns `CHAT_ERROR_4` or we detect a stale pending message, we call `DELETE /api/chat/v1/chats` with the problematic `chatGuid`, invalidate the lease, and spin up a fresh conversation. This effectively keeps multiple conversations in rotation and prevents wrong-parent loops.
 - **Error instrumentation**: Structured logs differentiate between `stale-pending-message`, `chat-error-4`, HTTP invalidations, and SSE fallbacks. This gives the support team quick breadcrumbs when QA attaches console logs.
 - **Regression tests**: `chat-pool.test.ts` now verifies that pending message metadata survives hydration, and the client suite still passes with the stricter completion rules.
+- **Parallel chat capacity**: The pool keeps up to four slots per `(provider, purpose, baseURL)` key, the translation queue warms additional slots whenever the backlog grows, and chunk-aware prompts (`part X of Y`) keep translations coherent even when requests are processed out of order.
 
 ## 2. Product Goals & Constraints
 1. Allow users to run every Read Frog feature (page translation, selection translation, read summaries, AI content aware) with GenAI as the provider.
@@ -91,11 +95,18 @@
 - Monitor telemetry/logs after rollout; if session errors spike, raise alerts and coordinate with the Samsung SSO team.
 
 ### 3.10 Conversation Pooling & Recovery
-- **State tracking**: Each provider/baseURL pair has a single pooled chat that persists `parentMessageGuid`, `pendingMessageGuid`, and `pendingSince`. TTL eviction still applies (60s by default) so stale chats quietly disappear.
-- **Pending enforcement**: When `acquireGenAIChat` hydrates a lease whose `pendingMessageGuid` is still set, the client immediately skips the chat and schedules a remote delete. This avoids "parent message still processing" loops after page refreshes or crashes.
-- **Remote deletion**: `DELETE https://genai.sec.samsung.net/api/chat/v1/chats` now runs before every forced reset. The request payload looks like `{"chatGuids":["019ade1b-c2a7-7220-a115-8a2868c2655b"]}` and the API echoes the same array when successful.
-- **Retry budget**: Both translate/read helpers attempt up to `GENAI_CHAT_MAX_RECOVERY_ATTEMPTS` (currently 3) before failing fast with `[GenAI] Unable to obtain an available chat conversation`. Each attempt either reuses a healthy lease or provisions a fresh conversation.
-- **Operational logging**: Every reset includes `reason` metadata (`stale-pending-message`, `chat-error-4`, `pending-message`, HTTP status) so we can correlate console logs with Samsung portal outages.
+- **Multi-slot state**: Each `(provider, purpose, baseURL)` key now owns up to four independent slots. Every slot persists its `chatGuid`, `parentMessageGuid`, `pendingMessageGuid`, and timestamps, while an in-memory `busy` flag prevents double leasing. Idle slots age out after `GENAI_CHAT_IDLE_TTL_MS` just like the single-slot version.
+- **FIFO waiters & warm provisioning**: When all slots are busy, new callers queue as waiters. Releases immediately hand the slot to the next waiter; invalidation removes the slot and provisions a replacement if waiters remain. The new `scaleGenAIChatPool` helper lets other subsystems (e.g., the translation queue) pre-warm additional idle slots based on backlog hints.
+- **Pending enforcement**: Hydrated leases respect `pendingMessageGuid` metadata; if a slot still has an unfinished user message the client either waits for completion or invalidates the chat and provisions a fresh one, avoiding "parent still processing" loops.
+- **Remote deletion**: `DELETE https://genai.sec.samsung.net/api/chat/v1/chats` still runs before each forced reset with payload `{"chatGuids":["<guid>"]}`. Failures fall back to local invalidation and are logged with a structured `reason` field.
+- **Retry budget**: `GENAI_CHAT_MAX_RECOVERY_ATTEMPTS` (3) bounds how often `genaiTranslate`/`genaiGenerateText` recycle chats before failing with `[GenAI] Unable to obtain an available chat conversation`.
+- **Operational logging**: Reset logs capture `reason`, `chatGuid`, waiter stats, and warm-slot decisions so QA can map console breadcrumbs to Samsung portal behavior.
+
+### 3.11 Parallel Conversations (Implemented)
+- **Translation queue hints**: `translation-queues.ts` tracks the GenAI backlog per provider/baseURL and calls `warmGenAIChatPool('translate', desiredSlots)` to keep up to four slots hot whenever the backlog grows.
+- **Prompt chunk metadata**: `translateText` threads `chunkMetadata` derived from page translation walks through the queue, `getTranslatePrompt`, and `genaiTranslate`, so each snippet tells the LLM whether it is "part X of Y" and to stay consistent even when chunks execute out of order.
+- **Per-request routing**: GenAI translations now skip the shared `BatchQueue` so each DOM snippet runs as its own request. This keeps prompts chunk-aware, gives the request queue accurate backlog counts, and lets the chat pool concurrency cap regulate throughput.
+- **Extensibility**: Structured `TranslationChunkMetadata` travels through messaging, hashing, caching, and prompt generation, so future flows (selection translation, host translations) can opt in by providing better chunk grouping IDs and totals.
 
 ## 4. Environments, Build, & Permissions
 - **Browser permissions**: `wxt.config.ts` now whitelists `https://genai.sec.samsung.net/*` in both `permissions` (for `tabs`/`cookies`) and `host_permissions`. Keep Chromium/Edge/Firefox manifests in sync whenever Samsung changes hostnames.

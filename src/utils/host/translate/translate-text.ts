@@ -15,6 +15,7 @@ import { getTranslatePrompt } from '@/utils/prompts/translate'
 import { getConfigFromStorage } from '../../config/config'
 import { Sha256Hex } from '../../hash'
 import { sendMessage } from '../../message'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 
 const MIN_LENGTH_FOR_LANG_DETECTION = 50
 
@@ -128,7 +129,7 @@ async function buildHashComponents(
   return hashComponents
 }
 
-export async function translateText(text: string) {
+export async function translateText(text: string, options?: { chunkMetadata?: TranslationChunkMetadata }) {
   const config = await getConfigFromStorage()
   if (!config) {
     throw new Error('No global config when translate text')
@@ -171,6 +172,14 @@ export async function translateText(text: string) {
     { title: articleTitle, textContent: articleTextContent },
   )
 
+  const chunkMetadata = options?.chunkMetadata
+  if (chunkMetadata?.groupId)
+    hashComponents.push(`chunkGroup:${chunkMetadata.groupId}`)
+  if (typeof chunkMetadata?.index === 'number')
+    hashComponents.push(`chunkIndex:${chunkMetadata.index}`)
+  if (typeof chunkMetadata?.total === 'number')
+    hashComponents.push(`chunkTotal:${chunkMetadata.total}`)
+
   const clientRequestId = crypto.randomUUID()
 
   return await sendMessage('enqueueTranslateRequest', {
@@ -182,6 +191,7 @@ export async function translateText(text: string) {
     clientRequestId,
     articleTitle,
     articleTextContent,
+    chunkMetadata,
   })
 }
 
