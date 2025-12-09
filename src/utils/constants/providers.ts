@@ -18,6 +18,8 @@ import { omit, pick } from '@/types/utils'
 import { getLobeIconsCDNUrlFn } from '../logo'
 import { WEBSITE_URL } from './url'
 
+export const GENAI_COOKIE_BRIDGE_DEFAULT_PORT = 17891
+
 export const DEFAULT_READ_MODELS: ReadModels = {
   genai: {
     model: 'GPT-OSS',
@@ -436,6 +438,10 @@ export const DEFAULT_PROVIDER_CONFIG = {
     enabled: true,
     provider: 'genai',
     baseURL: 'https://genai.sec.samsung.net',
+    cookieBridge: {
+      enabled: true,
+      port: GENAI_COOKIE_BRIDGE_DEFAULT_PORT,
+    },
     models: {
       read: DEFAULT_READ_MODELS.genai,
       translate: DEFAULT_TRANSLATE_MODELS.genai,

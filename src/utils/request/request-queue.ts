@@ -160,6 +160,13 @@ export class RequestQueue {
 
       // console.error(`❌ Task ${task.id} failed at ${Date.now()}:`, error)
 
+      if (isAbortError(error)) {
+        task.reject(error)
+        this.executingTasks.delete(task.hash)
+        this.schedule()
+        return
+      }
+
       // Check if we should retry
       if (task.retryCount < this.options.maxRetries) {
         task.retryCount++
@@ -219,4 +226,14 @@ export class RequestQueue {
 
     this.lastRefill = now
   }
+}
+
+function isAbortError(error: unknown): error is DOMException | Error {
+  if (!error)
+    return false
+  if (typeof DOMException !== 'undefined' && error instanceof DOMException)
+    return error.name === 'AbortError'
+  if (error instanceof Error)
+    return error.name === 'AbortError'
+  return false
 }

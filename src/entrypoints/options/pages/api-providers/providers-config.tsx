@@ -6,8 +6,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import ProviderIcon from '@/components/provider-icon'
 import { useTheme } from '@/components/providers/theme-provider'
 import { Badge } from '@/components/shadcn/badge'
-import { Button } from '@/components/shadcn/button'
-import { Dialog, DialogTrigger } from '@/components/shadcn/dialog'
 import { Switch } from '@/components/shadcn/switch'
 import { configFieldsAtomMap } from '@/utils/atoms/config'
 import { providerConfigAtom, readProviderConfigAtom, translateProviderConfigAtom } from '@/utils/atoms/provider'
@@ -15,7 +13,6 @@ import { getAPIProvidersConfig } from '@/utils/config/helpers'
 import { API_PROVIDER_ITEMS } from '@/utils/constants/providers'
 import { cn } from '@/utils/styles/tailwind'
 import { ConfigCard } from '../../components/config-card'
-import AddProviderDialog from './add-provider-dialog'
 import { selectedProviderIdAtom } from './atoms'
 import { ProviderConfigForm } from './provider-config-form'
 
@@ -36,8 +33,7 @@ export function ProvidersConfig() {
 
 function ProviderCardList() {
   const providersConfig = useAtomValue(configFieldsAtomMap.providersConfig)
-  const apiProvidersConfig = getAPIProvidersConfig(providersConfig)
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const apiProvidersConfig = getAPIProvidersConfig(providersConfig).filter(provider => provider.provider === 'genai')
   const [canScroll, setCanScroll] = useState(false)
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true)
   const [isScrolledToTop, setIsScrolledToTop] = useState(true)
@@ -96,24 +92,18 @@ function ProviderCardList() {
       }
     }
   }, [])
+  if (apiProvidersConfig.length === 0) {
+    return (
+      <div className="w-40 lg:w-52">
+        <div className="rounded-xl border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
+          {i18n.t('options.apiProviders.missingGenAI')}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="w-40 lg:w-52 flex flex-col gap-4">
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogTrigger asChild>
-          <Button
-            variant="outline"
-            className="h-auto p-3 border-dashed rounded-xl"
-            onClick={() => setIsAddDialogOpen(true)}
-          >
-            <div className="flex items-center justify-center gap-2 w-full">
-              <Icon icon="tabler:plus" className="size-4" />
-              <span className="text-sm">{i18n.t('options.apiProviders.addProvider')}</span>
-            </div>
-          </Button>
-        </DialogTrigger>
-        <AddProviderDialog onClose={() => setIsAddDialogOpen(false)} />
-      </Dialog>
       <div className="relative">
         {canScroll && !isScrolledToTop && (
           <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-background to-transparent flex items-center justify-center z-10 pointer-events-none">

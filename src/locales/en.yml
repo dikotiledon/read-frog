@@ -48,6 +48,7 @@ options:
         action: Register to Get Free API Key
         addProvider: Add 302.AI Configuration
     addProvider: Add Provider
+    missingGenAI: Samsung GenAI provider is missing. Please reinstall the extension or reset your configuration.
     badges:
       translate: Translate
       read: Read
@@ -128,6 +129,14 @@ options:
       openFailed: Could not open Samsung GenAI in a new tab.
       lastChecked: Last checked $1
       notChecked: Session has not been checked yet.
+    genaiCookieBridge:
+      title: Cookie bridge
+      description: Automatically send Samsung GenAI cookies to the LiveCaptions Translator desktop app over localhost. Enable only if that app is running on the same machine.
+      port:
+        label: Bridge port
+        help: Match the port shown inside LiveCaptions Translator (default 17891).
+        invalid: Enter a valid port number.
+        range: Port must be between 1 and 65535.
   general:
     title: General
     readConfig:
@@ -398,10 +407,13 @@ options:
         confirm: Confirm
         cancel: Cancel
         description: This operation will clear all your custom configurations and reset them to default values. Please confirm.
-  whatsNew:
-    title: What's New
-  survey:
-    title: New Feature Suggestion
+header:
+  login:
+    button: Log in to Samsung GenAI
+    loading: Opening Samsung GenAI...
+    success: Samsung GenAI session is ready
+    error: Failed to refresh Samsung GenAI session
+    missingConfig: Configure Samsung GenAI first
 side:
   sourceLang: Source Language
   targetLang: Target Language

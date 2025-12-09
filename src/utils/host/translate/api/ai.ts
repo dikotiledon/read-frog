@@ -8,11 +8,18 @@ import { getTranslateModelById } from '@/utils/providers/model'
 import { isGenAIProviderConfig } from '@/types/config/provider'
 import { genaiTranslate } from '@/utils/genai/client'
 
+export type AITranslateOptions = {
+  isBatch?: boolean
+  content?: ArticleContent
+  chunkMetadata?: TranslationChunkMetadata
+  clientRequestId?: string
+}
+
 export async function aiTranslate(
   text: string,
   targetLangName: string,
   providerConfig: LLMTranslateProviderConfig,
-  options?: { isBatch?: boolean, content?: ArticleContent, chunkMetadata?: TranslationChunkMetadata },
+  options?: AITranslateOptions,
 ) {
   if (isGenAIProviderConfig(providerConfig))
     return await genaiTranslate(text, targetLangName, providerConfig, options)

@@ -8,10 +8,34 @@ import { getTranslatePrompt } from '@/utils/prompts/translate'
 import { GENAI_ENDPOINTS, GENAI_MESSAGE_POLL_INTERVAL_MS, GENAI_MESSAGE_POLL_MAX_BACKOFF_MULTIPLIER, GENAI_MESSAGE_POLL_TIMEOUT_MS, GENAI_STREAM_COMPLETE_EVENTS } from './constants'
 import type { GenAIChatLease, GenAIChatPurpose } from './chat-pool'
 import { acquireGenAIChat, scaleGenAIChatPool } from './chat-pool'
+import { registerActiveGenAIRequest } from './request-registry'
 import { resolveGenAIModelGuid } from './models'
 import { ensureGenAISession } from './session'
 
 const GENAI_CHAT_MAX_RECOVERY_ATTEMPTS = 3
+
+function createAbortError(message: string): Error {
+  if (typeof DOMException !== 'undefined')
+    return new DOMException(message, 'AbortError')
+  const error = new Error(message)
+  error.name = 'AbortError'
+  return error
+}
+
+function isAbortError(error: unknown): error is DOMException | Error {
+  if (!error)
+    return false
+  if (error instanceof DOMException)
+    return error.name === 'AbortError'
+  if (error instanceof Error)
+    return error.name === 'AbortError'
+  return false
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted)
+    throw (signal.reason instanceof Error ? signal.reason : createAbortError('GenAI request aborted'))
+}
 
 class GenAIHttpError extends Error {
   status: number
@@ -132,7 +156,13 @@ async function deleteChats(baseURL: string, chatGuids: string[]) {
   })
 }
 
-async function sendUserMessage(baseURL: string, chatGuid: string, content: string, parentMessageGuid?: string | null) {
+async function sendUserMessage(
+  baseURL: string,
+  chatGuid: string,
+  content: string,
+  parentMessageGuid?: string | null,
+  options?: { signal?: AbortSignal },
+) {
   const payload = {
     chatGuid,
     messageType: 'chat',
@@ -152,6 +182,7 @@ async function sendUserMessage(baseURL: string, chatGuid: string, content: strin
     const data = await genaiFetchJson<{ guid: string }>(baseURL, GENAI_ENDPOINTS.messages, {
       method: 'POST',
       body: JSON.stringify(payload),
+      signal: options?.signal,
     })
 
     return data.guid
@@ -188,16 +219,18 @@ async function invalidateChatWithRemoteDelete(baseURL: string, chatLease: GenAIC
   }
 }
 
-async function settlePendingMessageIfNeeded(baseURL: string, chatLease: GenAIChatLease): Promise<boolean> {
+async function settlePendingMessageIfNeeded(baseURL: string, chatLease: GenAIChatLease, signal?: AbortSignal): Promise<boolean> {
   if (!chatLease.pendingMessageGuid)
     return true
 
   try {
-    await waitForMessageCompletion(baseURL, chatLease.pendingMessageGuid)
+    await waitForMessageCompletion(baseURL, chatLease.pendingMessageGuid, { signal })
     chatLease.setPendingMessageGuid(null)
     return true
   }
   catch (error) {
+    if (isAbortError(error))
+      throw error
     logger.warn('[GenAI] Pending user message did not complete', {
       chatGuid: chatLease.chatGuid,
       pendingMessageGuid: chatLease.pendingMessageGuid,
@@ -314,6 +347,7 @@ type WaitForContentOptions = {
   sleep?: (ms: number) => Promise<void>
   fallbackContent?: string | null
   onInvalidateChat?: () => void | Promise<void>
+  signal?: AbortSignal
 }
 
 type MessageContentResult = {
@@ -333,6 +367,36 @@ type ReadEventResult = {
 }
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+async function sleepWithSignal(
+  ms: number,
+  signal?: AbortSignal,
+  sleepFn: (ms: number) => Promise<void> = sleep,
+) {
+  if (!signal)
+    return await sleepFn(ms)
+
+  throwIfAborted(signal)
+
+  let abortHandler: (() => void) | null = null
+
+  try {
+    await Promise.race([
+      sleepFn(ms),
+      new Promise<never>((_, reject) => {
+        const onAbort = () => {
+          reject(signal.reason instanceof Error ? signal.reason : createAbortError('GenAI request aborted'))
+        }
+        abortHandler = onAbort
+        signal.addEventListener('abort', onAbort, { once: true })
+      }),
+    ])
+  }
+  finally {
+    if (abortHandler)
+      signal.removeEventListener('abort', abortHandler)
+  }
+}
 
 function parseGuidsFromRawSSE(rawText: string): GuidParseState {
   const state: GuidParseState = { latestGuid: null, completedGuid: null }
@@ -385,10 +449,13 @@ function parseGuidsFromRawSSE(rawText: string): GuidParseState {
   return state
 }
 
-async function readEventStream(response: Response): Promise<ReadEventResult> {
+async function readEventStream(response: Response, options?: { signal?: AbortSignal }): Promise<ReadEventResult> {
   const reader = response.body?.getReader()
   if (!reader)
     throw new Error('[GenAI] Missing response stream')
+
+  const signal = options?.signal
+  throwIfAborted(signal)
 
   const decoder = new TextDecoder()
   let latestGuid: string | null = null
@@ -397,6 +464,17 @@ async function readEventStream(response: Response): Promise<ReadEventResult> {
   const collectedContent: string[] = []
 
   let hasLoggedChunkFallbackError = false
+
+  let abortError: Error | null = null
+  const abortListener = signal
+    ? () => {
+        abortError = signal.reason instanceof Error ? signal.reason : createAbortError('GenAI request aborted')
+        void reader.cancel().catch(() => {})
+      }
+    : null
+
+  if (signal && abortListener)
+    signal.addEventListener('abort', abortListener, { once: true })
 
   const parser = createParser({
     onEvent(event: EventSourceMessage) {
@@ -438,50 +516,64 @@ async function readEventStream(response: Response): Promise<ReadEventResult> {
     },
   })
 
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done)
-      break
+  try {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (abortError)
+        throw abortError
+      if (done)
+        break
 
-    const text = decoder.decode(value, { stream: true })
-    rawStreamText += text
-    parser.feed(text)
+      const text = decoder.decode(value, { stream: true })
+      rawStreamText += text
+      parser.feed(text)
+
+      if (completedGuid)
+        return {
+          responseGuid: completedGuid,
+          fallbackContent: collectedContent.join('') || null,
+        }
+    }
+
+    const remaining = decoder.decode()
+    if (remaining) {
+      rawStreamText += remaining
+      parser.feed(remaining)
+    }
+
+    parser.feed('\n\n')
+    parser.reset({ consume: true })
+
+    if (!completedGuid || !latestGuid) {
+      const fallbackState = parseGuidsFromRawSSE(rawStreamText)
+      if (!completedGuid && fallbackState.completedGuid)
+        completedGuid = fallbackState.completedGuid
+      if (!latestGuid && fallbackState.latestGuid)
+        latestGuid = fallbackState.latestGuid
+    }
+
+    const fallbackContent = collectedContent.join('') || null
 
     if (completedGuid)
-      return {
-        responseGuid: completedGuid,
-        fallbackContent: collectedContent.join('') || null,
-      }
+      return { responseGuid: completedGuid, fallbackContent }
+    if (latestGuid)
+      return { responseGuid: latestGuid, fallbackContent }
+
+    throw new Error('[GenAI] Stream ended without response guid')
   }
-
-  const remaining = decoder.decode()
-  if (remaining) {
-    rawStreamText += remaining
-    parser.feed(remaining)
+  finally {
+    if (signal && abortListener)
+      signal.removeEventListener('abort', abortListener)
   }
-
-  parser.feed('\n\n')
-  parser.reset({ consume: true })
-
-  if (!completedGuid || !latestGuid) {
-    const fallbackState = parseGuidsFromRawSSE(rawStreamText)
-    if (!completedGuid && fallbackState.completedGuid)
-      completedGuid = fallbackState.completedGuid
-    if (!latestGuid && fallbackState.latestGuid)
-      latestGuid = fallbackState.latestGuid
-  }
-
-  const fallbackContent = collectedContent.join('') || null
-
-  if (completedGuid)
-    return { responseGuid: completedGuid, fallbackContent }
-  if (latestGuid)
-    return { responseGuid: latestGuid, fallbackContent }
-
-  throw new Error('[GenAI] Stream ended without response guid')
 }
 
-async function waitForAssistantMessage(baseURL: string, chatGuid: string, messageGuid: string, modelGuid: string): Promise<ReadEventResult> {
+async function waitForAssistantMessage(
+  baseURL: string,
+  chatGuid: string,
+  messageGuid: string,
+  modelGuid: string,
+  options?: { signal?: AbortSignal },
+): Promise<ReadEventResult> {
   const payload = {
     chatGuid,
     messageGuid,
@@ -496,9 +588,10 @@ async function waitForAssistantMessage(baseURL: string, chatGuid: string, messag
       Accept: 'text/event-stream',
     },
     body: JSON.stringify(payload),
+    signal: options?.signal,
   })
 
-  return await readEventStream(response)
+  return await readEventStream(response, { signal: options?.signal })
 }
 
 function normalizeStatus(status?: string | null) {
@@ -521,6 +614,7 @@ async function waitForMessageContent(
   const pollIntervalMs = options?.pollIntervalMs ?? GENAI_MESSAGE_POLL_INTERVAL_MS
   const timeoutMs = options?.timeoutMs ?? GENAI_MESSAGE_POLL_TIMEOUT_MS
   const sleepFn = options?.sleep ?? sleep
+  const signal = options?.signal
   const fallbackContent = options?.fallbackContent ?? null
   const hasFallback = typeof fallbackContent === 'string' && fallbackContent.trim().length > 0
   const deadline = Date.now() + timeoutMs
@@ -530,11 +624,13 @@ async function waitForMessageContent(
   let latestContent: string | null = hasFallback ? fallbackContent : null
 
   while (true) {
+    throwIfAborted(signal)
     attempts += 1
     let data: GenAIMessageResponse
     try {
       data = await genaiFetchJson<GenAIMessageResponse>(baseURL, GENAI_ENDPOINTS.message(responseGuid), {
         method: 'GET',
+        signal,
       })
     }
     catch (error) {
@@ -634,7 +730,7 @@ async function waitForMessageContent(
     lastStatus = status ?? lastStatus
     const backoffStep = Math.min(Math.max(attempts, 1), GENAI_MESSAGE_POLL_MAX_BACKOFF_MULTIPLIER)
     const delayMs = normalizedPollInterval * backoffStep
-    await sleepFn(delayMs)
+    await sleepWithSignal(delayMs, signal, sleepFn)
   }
 }
 
@@ -642,6 +738,7 @@ type WaitForMessageCompletionOptions = {
   pollIntervalMs?: number
   timeoutMs?: number
   sleep?: (ms: number) => Promise<void>
+  signal?: AbortSignal
 }
 
 async function waitForMessageCompletion(
@@ -652,16 +749,19 @@ async function waitForMessageCompletion(
   const pollIntervalMs = options?.pollIntervalMs ?? GENAI_MESSAGE_POLL_INTERVAL_MS
   const timeoutMs = options?.timeoutMs ?? GENAI_MESSAGE_POLL_TIMEOUT_MS
   const sleepFn = options?.sleep ?? sleep
+  const signal = options?.signal
   const deadline = Date.now() + timeoutMs
   const normalizedPollInterval = Math.max(pollIntervalMs, 0)
   let attempts = 0
 
   while (true) {
+    throwIfAborted(signal)
     attempts += 1
     let data: GenAIMessageResponse
     try {
       data = await genaiFetchJson<GenAIMessageResponse>(baseURL, GENAI_ENDPOINTS.message(messageGuid), {
         method: 'GET',
+        signal,
       })
     }
     catch (error) {
@@ -687,15 +787,22 @@ async function waitForMessageCompletion(
       throw new Error(`[GenAI] Timed out waiting for message ${messageGuid} to complete`)
 
     const backoffStep = Math.min(Math.max(attempts, 1), GENAI_MESSAGE_POLL_MAX_BACKOFF_MULTIPLIER)
-    await sleepFn(normalizedPollInterval * backoffStep)
+    await sleepWithSignal(normalizedPollInterval * backoffStep, signal, sleepFn)
   }
+}
+
+type GenAIExecutionOptions = {
+  isBatch?: boolean
+  content?: ArticleContent
+  chunkMetadata?: TranslationChunkMetadata
+  clientRequestId?: string
 }
 
 export async function genaiTranslate(
   text: string,
   targetLangName: string,
   providerConfig: GenAIProviderConfig,
-  options?: { isBatch?: boolean, content?: ArticleContent, chunkMetadata?: TranslationChunkMetadata },
+  options?: GenAIExecutionOptions,
 ): Promise<string> {
   const baseURL = await ensureGenAISession(providerConfig)
 
@@ -704,110 +811,139 @@ export async function genaiTranslate(
   if (!combinedContent.trim())
     return ''
 
-  translateChatLoop:
-  for (let attempt = 0; attempt < GENAI_CHAT_MAX_RECOVERY_ATTEMPTS; attempt++) {
-    const chatLease = await acquireGenAIChat(providerConfig, baseURL, 'translate', () => createChat(baseURL))
-    let shouldResetChat = false
-    let resetReason: string | null = null
-    let pendingSet = false
-    let pendingMessageSettled = false
+  const abortController = new AbortController()
+  const unregister = options?.clientRequestId
+    ? registerActiveGenAIRequest(options.clientRequestId, (reason?: unknown) => {
+        if (abortController.signal.aborted)
+          return
+        const abortReason = reason instanceof Error ? reason : createAbortError(typeof reason === 'string' ? reason : 'Tab closed during translation')
+        abortController.abort(abortReason)
+      })
+    : null
 
-    try {
-      if (chatLease.pendingMessageGuid) {
-        const settled = await settlePendingMessageIfNeeded(baseURL, chatLease)
-        if (!settled) {
-          shouldResetChat = true
-          resetReason = 'stale-pending-message'
-          continue translateChatLoop
+  try {
+    translateChatLoop:
+    for (let attempt = 0; attempt < GENAI_CHAT_MAX_RECOVERY_ATTEMPTS; attempt++) {
+      const chatLease = await acquireGenAIChat(providerConfig, baseURL, 'translate', () => createChat(baseURL))
+      let shouldResetChat = false
+      let resetReason: string | null = null
+      let pendingSet = false
+      let pendingMessageSettled = false
+
+      try {
+        if (chatLease.pendingMessageGuid) {
+          const settled = await settlePendingMessageIfNeeded(baseURL, chatLease, abortController.signal)
+          if (!settled) {
+            shouldResetChat = true
+            resetReason = 'stale-pending-message'
+            continue translateChatLoop
+          }
         }
-      }
 
-      let parentCompletionWaitAttempted = false
+        let parentCompletionWaitAttempted = false
 
-      while (true) {
-        const parentGuid = chatLease.parentMessageGuid ?? undefined
-        let messageGuid: string
-        try {
-          messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, combinedContent, parentGuid)
-        }
-        catch (error) {
-          if (error instanceof GenAIPendingResponseError && parentGuid && !parentCompletionWaitAttempted) {
-            parentCompletionWaitAttempted = true
-            try {
-              await waitForMessageCompletion(baseURL, parentGuid)
-              continue
+        while (true) {
+          throwIfAborted(abortController.signal)
+
+          const parentGuid = chatLease.parentMessageGuid ?? undefined
+          let messageGuid: string
+          try {
+            messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, combinedContent, parentGuid, { signal: abortController.signal })
+          }
+          catch (error) {
+            if (error instanceof GenAIPendingResponseError && parentGuid && !parentCompletionWaitAttempted) {
+              parentCompletionWaitAttempted = true
+              try {
+                await waitForMessageCompletion(baseURL, parentGuid, { signal: abortController.signal })
+                continue
+              }
+              catch (completionError) {
+                logger.warn('[GenAI] Parent message did not complete before retrying', {
+                  chatGuid: chatLease.chatGuid,
+                  parentGuid,
+                  error: completionError,
+                })
+                shouldResetChat = true
+                resetReason = 'parent-still-processing'
+                break
+              }
             }
-            catch (completionError) {
-              logger.warn('[GenAI] Parent message did not complete before retrying', {
-                chatGuid: chatLease.chatGuid,
-                parentGuid,
-                error: completionError,
-              })
+
+            if (error instanceof GenAIPendingResponseError) {
               shouldResetChat = true
-              resetReason = 'parent-still-processing'
+              resetReason = 'chat-error-4'
               break
             }
+
+            throw error
           }
 
-          if (error instanceof GenAIPendingResponseError) {
+          chatLease.setPendingMessageGuid(messageGuid)
+          pendingSet = true
+
+          const modelRef = getModelName(providerConfig, 'translate')
+          const modelGuid = resolveGenAIModelGuid(modelRef)
+
+          const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid, { signal: abortController.signal })
+          const translationResult = await waitForMessageContent(baseURL, assistantGuid, {
+            fallbackContent,
+            onInvalidateChat: chatLease.invalidate,
+            signal: abortController.signal,
+          })
+
+          pendingMessageSettled = translationResult.completed
+
+          if (translationResult.completed)
+            chatLease.setParentMessageGuid(assistantGuid)
+          else {
             shouldResetChat = true
-            resetReason = 'chat-error-4'
-            break
+            resetReason = 'response-incomplete'
           }
 
+          return normalizeAssistantResponse(translationResult.content)
+        }
+
+        if (shouldResetChat)
+          continue translateChatLoop
+      }
+      catch (error) {
+        if (shouldInvalidateChatFromHttpError(error))
+          await chatLease.invalidate()
+        if (isAbortError(error)) {
+          shouldResetChat = true
+          resetReason = resetReason ?? 'request-aborted'
           throw error
         }
-
-        chatLease.setPendingMessageGuid(messageGuid)
-        pendingSet = true
-
-        const modelRef = getModelName(providerConfig, 'translate')
-        const modelGuid = resolveGenAIModelGuid(modelRef)
-
-        const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid)
-        const translationResult = await waitForMessageContent(baseURL, assistantGuid, {
-          fallbackContent,
-          onInvalidateChat: chatLease.invalidate,
-        })
-
-        pendingMessageSettled = translationResult.completed
-
-        if (translationResult.completed)
-          chatLease.setParentMessageGuid(assistantGuid)
-        else {
-          shouldResetChat = true
-          resetReason = 'response-incomplete'
-        }
-
-        return normalizeAssistantResponse(translationResult.content)
+        throw error
       }
+      finally {
+        if (pendingSet && pendingMessageSettled)
+          chatLease.setPendingMessageGuid(null)
 
-      if (shouldResetChat)
-        continue translateChatLoop
+        if (shouldResetChat)
+          await invalidateChatWithRemoteDelete(baseURL, chatLease, resetReason ?? 'pending-message')
+        else
+          await chatLease.release()
+      }
     }
-    catch (error) {
-      if (shouldInvalidateChatFromHttpError(error))
-        await chatLease.invalidate()
-      throw error
-    }
-    finally {
-      if (pendingSet && pendingMessageSettled)
-        chatLease.setPendingMessageGuid(null)
 
-      if (shouldResetChat)
-        await invalidateChatWithRemoteDelete(baseURL, chatLease, resetReason ?? 'pending-message')
-      else
-        await chatLease.release()
-    }
+    throw new Error('[GenAI] Unable to obtain an available chat conversation')
   }
+  finally {
+    unregister?.()
+  }
+}
 
-  throw new Error('[GenAI] Unable to obtain an available chat conversation')
+type GenAIGenerateOptions = {
+  system?: string
+  modelType?: ModelType
+  clientRequestId?: string
 }
 
 export async function genaiGenerateText(
   prompt: string,
   providerConfig: GenAIProviderConfig,
-  options?: { system?: string, modelType?: ModelType },
+  options?: GenAIGenerateOptions,
 ): Promise<string> {
   const baseURL = await ensureGenAISession(providerConfig)
   const system = options?.system ?? ''
@@ -816,105 +952,127 @@ export async function genaiGenerateText(
     return ''
 
   const modelType = options?.modelType ?? 'translate'
+  const abortController = new AbortController()
+  const unregister = options?.clientRequestId
+    ? registerActiveGenAIRequest(options.clientRequestId, (reason?: unknown) => {
+        if (abortController.signal.aborted)
+          return
+        const abortReason = reason instanceof Error ? reason : createAbortError(typeof reason === 'string' ? reason : 'GenAI request aborted')
+        abortController.abort(abortReason)
+      })
+    : null
 
-  generateChatLoop:
-  for (let attempt = 0; attempt < GENAI_CHAT_MAX_RECOVERY_ATTEMPTS; attempt++) {
-    const chatLease = await acquireGenAIChat(providerConfig, baseURL, modelType, () => createChat(baseURL))
-    let shouldResetChat = false
-    let resetReason: string | null = null
-    let pendingSet = false
-    let pendingMessageSettled = false
+  try {
+    generateChatLoop:
+    for (let attempt = 0; attempt < GENAI_CHAT_MAX_RECOVERY_ATTEMPTS; attempt++) {
+      const chatLease = await acquireGenAIChat(providerConfig, baseURL, modelType, () => createChat(baseURL))
+      let shouldResetChat = false
+      let resetReason: string | null = null
+      let pendingSet = false
+      let pendingMessageSettled = false
 
-    try {
-      if (chatLease.pendingMessageGuid) {
-        const settled = await settlePendingMessageIfNeeded(baseURL, chatLease)
-        if (!settled) {
-          shouldResetChat = true
-          resetReason = 'stale-pending-message'
-          continue generateChatLoop
+      try {
+        if (chatLease.pendingMessageGuid) {
+          const settled = await settlePendingMessageIfNeeded(baseURL, chatLease, abortController.signal)
+          if (!settled) {
+            shouldResetChat = true
+            resetReason = 'stale-pending-message'
+            continue generateChatLoop
+          }
         }
-      }
 
-      let parentCompletionWaitAttempted = false
+        let parentCompletionWaitAttempted = false
 
-      while (true) {
-        const parentGuid = chatLease.parentMessageGuid ?? undefined
-        let messageGuid: string
-        try {
-          messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, content, parentGuid)
-        }
-        catch (error) {
-          if (error instanceof GenAIPendingResponseError && parentGuid && !parentCompletionWaitAttempted) {
-            parentCompletionWaitAttempted = true
-            try {
-              await waitForMessageCompletion(baseURL, parentGuid)
-              continue
+        while (true) {
+          throwIfAborted(abortController.signal)
+
+          const parentGuid = chatLease.parentMessageGuid ?? undefined
+          let messageGuid: string
+          try {
+            messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, content, parentGuid, { signal: abortController.signal })
+          }
+          catch (error) {
+            if (error instanceof GenAIPendingResponseError && parentGuid && !parentCompletionWaitAttempted) {
+              parentCompletionWaitAttempted = true
+              try {
+                await waitForMessageCompletion(baseURL, parentGuid, { signal: abortController.signal })
+                continue
+              }
+              catch (completionError) {
+                logger.warn('[GenAI] Parent message did not complete before retrying', {
+                  chatGuid: chatLease.chatGuid,
+                  parentGuid,
+                  error: completionError,
+                })
+                shouldResetChat = true
+                resetReason = 'parent-still-processing'
+                break
+              }
             }
-            catch (completionError) {
-              logger.warn('[GenAI] Parent message did not complete before retrying', {
-                chatGuid: chatLease.chatGuid,
-                parentGuid,
-                error: completionError,
-              })
+
+            if (error instanceof GenAIPendingResponseError) {
               shouldResetChat = true
-              resetReason = 'parent-still-processing'
+              resetReason = 'chat-error-4'
               break
             }
+
+            throw error
           }
 
-          if (error instanceof GenAIPendingResponseError) {
+          chatLease.setPendingMessageGuid(messageGuid)
+          pendingSet = true
+
+          const modelRef = getModelName(providerConfig, modelType)
+          const modelGuid = resolveGenAIModelGuid(modelRef)
+
+          const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid, { signal: abortController.signal })
+          const textResult = await waitForMessageContent(baseURL, assistantGuid, {
+            fallbackContent,
+            onInvalidateChat: chatLease.invalidate,
+            signal: abortController.signal,
+          })
+
+          pendingMessageSettled = textResult.completed
+
+          if (textResult.completed)
+            chatLease.setParentMessageGuid(assistantGuid)
+          else {
             shouldResetChat = true
-            resetReason = 'chat-error-4'
-            break
+            resetReason = 'response-incomplete'
           }
 
+          return normalizeAssistantResponse(textResult.content)
+        }
+
+        if (shouldResetChat)
+          continue generateChatLoop
+      }
+      catch (error) {
+        if (shouldInvalidateChatFromHttpError(error))
+          await chatLease.invalidate()
+        if (isAbortError(error)) {
+          shouldResetChat = true
+          resetReason = resetReason ?? 'request-aborted'
           throw error
         }
-
-        chatLease.setPendingMessageGuid(messageGuid)
-        pendingSet = true
-
-        const modelRef = getModelName(providerConfig, modelType)
-        const modelGuid = resolveGenAIModelGuid(modelRef)
-
-        const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid)
-        const textResult = await waitForMessageContent(baseURL, assistantGuid, {
-          fallbackContent,
-          onInvalidateChat: chatLease.invalidate,
-        })
-
-        pendingMessageSettled = textResult.completed
-
-        if (textResult.completed)
-          chatLease.setParentMessageGuid(assistantGuid)
-        else {
-          shouldResetChat = true
-          resetReason = 'response-incomplete'
-        }
-
-        return normalizeAssistantResponse(textResult.content)
+        throw error
       }
+      finally {
+        if (pendingSet && pendingMessageSettled)
+          chatLease.setPendingMessageGuid(null)
 
-      if (shouldResetChat)
-        continue generateChatLoop
+        if (shouldResetChat)
+          await invalidateChatWithRemoteDelete(baseURL, chatLease, resetReason ?? 'pending-message')
+        else
+          await chatLease.release()
+      }
     }
-    catch (error) {
-      if (shouldInvalidateChatFromHttpError(error))
-        await chatLease.invalidate()
-      throw error
-    }
-    finally {
-      if (pendingSet && pendingMessageSettled)
-        chatLease.setPendingMessageGuid(null)
 
-      if (shouldResetChat)
-        await invalidateChatWithRemoteDelete(baseURL, chatLease, resetReason ?? 'pending-message')
-      else
-        await chatLease.release()
-    }
+    throw new Error('[GenAI] Unable to obtain an available chat conversation')
   }
-
-  throw new Error('[GenAI] Unable to obtain an available chat conversation')
+  finally {
+    unregister?.()
+  }
 }
 
 export async function warmGenAIChatPool(

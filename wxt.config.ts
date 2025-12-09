@@ -23,12 +23,15 @@ export default defineConfig({
     host_permissions:
       mode === 'development'
         ? [
+            'http://127.0.0.1/*',
             'http://localhost:*/*', // For local backend (dev:local)
             'https://*.readfrog.app/*', // For prod backend (dev)
             'https://readfrog.app/*', // For prod backend (dev)
             'https://genai.sec.samsung.net/*',
           ]
         : [
+            'http://127.0.0.1/*',
+            'http://localhost:*/*',
             'https://*.readfrog.app/*',
             'https://readfrog.app/*', // Include both www and non-www versions
             'https://genai.sec.samsung.net/*',

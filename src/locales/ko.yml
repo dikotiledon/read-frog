@@ -127,6 +127,14 @@ options:
       openFailed: Could not open Samsung GenAI in a new tab.
       lastChecked: Last checked $1
       notChecked: Session has not been checked yet.
+    genaiCookieBridge:
+      title: 쿠키 브리지
+      description: 동일 PC에서 LiveCaptions Translator 데스크톱 앱이 실행 중일 때 localhost 를 통해 Samsung GenAI 쿠키를 자동으로 전송합니다. 해당 앱과 연동할 때만 활성화하세요.
+      port:
+        label: 브리지 포트
+        help: LiveCaptions Translator 에 표시된 포트와 동일하게 설정하세요(기본값 17891).
+        invalid: 올바른 포트 번호를 입력하세요.
+        range: 포트는 1~65535 사이여야 합니다.
   general:
     title: 일반
     readConfig:

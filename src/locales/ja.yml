@@ -127,6 +127,14 @@ options:
       openFailed: Could not open Samsung GenAI in a new tab.
       lastChecked: Last checked $1
       notChecked: Session has not been checked yet。
+    genaiCookieBridge:
+      title: Cookieブリッジ
+      description: 同じPCで LiveCaptions Translator デスクトップ版を実行している場合に、localhost 経由で Samsung GenAI の Cookie を自動送信します。必要なときだけ有効化してください。
+      port:
+        label: ブリッジポート
+        help: LiveCaptions Translator に表示されるポートと一致させてください（既定値 17891）。
+        invalid: 有効なポート番号を入力してください。
+        range: ポートは 1〜65535 の範囲で指定してください。
   general:
     title: 一般
     readConfig:

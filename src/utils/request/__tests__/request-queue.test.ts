@@ -358,6 +358,30 @@ describe('requestQueue – retry functionality', () => {
     await expect(promise).rejects.toThrow('Always fails')
   })
 
+  it('does not retry aborted tasks', async () => {
+    vi.useFakeTimers()
+
+    const q = new RequestQueue({
+      ...baseConfig,
+      maxRetries: 5,
+      baseRetryDelayMs: 100,
+    })
+
+    const abortError = typeof DOMException !== 'undefined'
+      ? new DOMException('aborted', 'AbortError')
+      : Object.assign(new Error('aborted'), { name: 'AbortError' })
+
+    const abortingThunk = vi.fn(() => Promise.reject(abortError))
+
+    const promise = q.enqueue(abortingThunk, Date.now(), 'abort-task')
+    promise.catch(() => {})
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(abortingThunk).toHaveBeenCalledTimes(1)
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('implements exponential backoff delays', async () => {
     vi.useFakeTimers()
     const q = new RequestQueue({

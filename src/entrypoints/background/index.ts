@@ -3,6 +3,7 @@ import { logger } from '@/utils/logger'
 import { onMessage, sendMessage } from '@/utils/message'
 import { SessionCacheGroupRegistry } from '@/utils/session-cache/session-cache-group-registry'
 import { ensureInitializedConfig } from './config'
+import { setupGenAICookieBridge } from './cookie-bridge'
 import { setUpConfigBackup } from './config-backup'
 import { cleanupAllSummaryCache, cleanupAllTranslationCache, setUpDatabaseCleanup } from './db-cleanup'
 import { handleAnalyzeSelectionPort, handleTranslateStreamPort, runAnalyzeSelectionStream } from './firefox-stream'
@@ -90,5 +91,6 @@ export default defineBackground({
 
     proxyFetch()
     void initMockData()
+    void setupGenAICookieBridge()
   },
 })

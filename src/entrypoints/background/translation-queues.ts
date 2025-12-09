@@ -20,6 +20,7 @@ import { BatchQueue } from '@/utils/request/batch-queue'
 import { RequestQueue } from '@/utils/request/request-queue'
 import { warmGenAIChatPool } from '@/utils/genai/client'
 import { GENAI_CHAT_MAX_SLOTS_PER_KEY } from '@/utils/genai/constants'
+import { cancelActiveGenAIRequest } from '@/utils/genai/request-registry'
 import { ensureInitializedConfig } from './config'
 
 export function parseBatchResult(result: string): string[] {
@@ -151,10 +152,10 @@ export async function setUpRequestQueue() {
   })
 
   const enqueueLLMRequest = async (data: TranslateBatchData) => {
-    const { text, langConfig, providerConfig, hash, scheduleAt, content, chunkMetadata } = data
+    const { text, langConfig, providerConfig, hash, scheduleAt, content, chunkMetadata, clientRequestId } = data
     const thunk = async () => {
       await putBatchRequestRecord({ originalRequestCount: 1, providerConfig })
-      return executeTranslate(text, langConfig, providerConfig, { content, chunkMetadata })
+      return executeTranslate(text, langConfig, providerConfig, { content, chunkMetadata, clientRequestId })
     }
     return requestQueue.enqueue(thunk, scheduleAt, hash)
   }
@@ -164,10 +165,10 @@ export async function setUpRequestQueue() {
     requestGenAIWarmSlots(data.providerConfig, backlogSize)
 
     try {
-      const { text, langConfig, providerConfig, hash, scheduleAt, content, chunkMetadata } = data
+      const { text, langConfig, providerConfig, hash, scheduleAt, content, chunkMetadata, clientRequestId } = data
       const runTask = async () => {
         await putBatchRequestRecord({ originalRequestCount: 1, providerConfig })
-        return executeTranslate(text, langConfig, providerConfig, { content, chunkMetadata })
+        return executeTranslate(text, langConfig, providerConfig, { content, chunkMetadata, clientRequestId })
       }
       return await requestQueue.enqueue(runTask, scheduleAt, hash)
     }
@@ -288,6 +289,7 @@ export async function setUpRequestQueue() {
       tabToClientRequestIds.delete(tabId)
       for (const requestId of requestIds) {
         batchQueue.cancelTasks(data => data.clientRequestId === requestId, 'Tab closed before translation finished')
+        void cancelActiveGenAIRequest(requestId, 'Tab closed before translation finished').catch(() => {})
       }
     })
 
@@ -342,7 +344,7 @@ export async function setUpRequestQueue() {
       }
       else {
         // Create thunk based on type and params
-        const thunk = () => executeTranslate(text, langConfig, providerConfig, { chunkMetadata })
+        const thunk = () => executeTranslate(text, langConfig, providerConfig, { chunkMetadata, clientRequestId })
         result = await requestQueue.enqueue(thunk, scheduleAt, hash)
       }
 

@@ -1,15 +1,14 @@
-import type { ProvidersConfig } from '@/types/config/provider'
 import { i18n } from '#imports'
 import { useStore } from '@tanstack/react-form'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { useEffect } from 'react'
-import { toast } from 'sonner'
-import { Button } from '@/components/shadcn/button'
+import { Input } from '@/components/shadcn/input'
 import { Separator } from '@/components/shadcn/separator'
-import { isAPIProviderConfig, isGenAIProviderConfig, isNonAPIProvider, isReadProvider, isTranslateProvider, providerRequiresAPIKey } from '@/types/config/provider'
+import { Switch } from '@/components/shadcn/switch'
+import type { GenAIProviderConfig } from '@/types/config/provider'
+import { isAPIProviderConfig, isGenAIProviderConfig, isReadProvider, isTranslateProvider, providerRequiresAPIKey } from '@/types/config/provider'
 import { configFieldsAtomMap } from '@/utils/atoms/config'
 import { providerConfigAtom } from '@/utils/atoms/provider'
-import { getReadProvidersConfig, getTranslateProvidersConfig, getTTSProvidersConfig } from '@/utils/config/helpers'
 import { cn } from '@/utils/styles/tailwind'
 import { selectedProviderIdAtom } from '../atoms'
 import { APIKeyField } from './api-key-field'
@@ -22,12 +21,9 @@ import { TranslateModelSelector } from './translate-model-selector'
 import { GenAISessionActions } from './genai-session-actions'
 
 export function ProviderConfigForm() {
-  const [selectedProviderId, setSelectedProviderId] = useAtom(selectedProviderIdAtom)
+  const [selectedProviderId] = useAtom(selectedProviderIdAtom)
   const [providerConfig, setProviderConfig] = useAtom(providerConfigAtom(selectedProviderId ?? ''))
-  const [allProvidersConfig, setAllProvidersConfig] = useAtom(configFieldsAtomMap.providersConfig)
-  const [readConfig, setReadConfig] = useAtom(configFieldsAtomMap.read)
-  const [translateConfig, setTranslateConfig] = useAtom(configFieldsAtomMap.translate)
-  const [ttsConfig, setTtsConfig] = useAtom(configFieldsAtomMap.tts)
+  const providersConfig = useAtomValue(configFieldsAtomMap.providersConfig)
 
   const specificFormOpts = {
     ...formOpts,
@@ -42,6 +38,12 @@ export function ProviderConfigForm() {
   })
 
   const providerType = useStore(form.store, state => state.values.provider)
+  const cookieBridgeEnabled = useStore(form.store, (state) => {
+    if (state.values.provider !== 'genai')
+      return false
+    const genaiValues = state.values as GenAIProviderConfig
+    return Boolean(genaiValues.cookieBridge?.enabled)
+  })
   const isReadProviderName = isReadProvider(providerType)
   const isTranslateProviderName = isTranslateProvider(providerType)
   const shouldShowApiKeyField = providerType ? providerRequiresAPIKey(providerType) : false
@@ -55,40 +57,6 @@ export function ProviderConfigForm() {
 
   if (!providerConfig || !isAPIProviderConfig(providerConfig)) {
     return null
-  }
-
-  const chooseNextProviderConfig = (providersConfig: ProvidersConfig) => {
-    // better not choose non API provider
-    const firstProvider = providersConfig.find(config => !isNonAPIProvider(config.provider))
-    return firstProvider ?? providersConfig[0]
-  }
-
-  const handleDelete = async () => {
-    const updatedAllProviders = allProvidersConfig.filter(provider => provider.id !== providerConfig.id)
-    const updatedAllReadProviders = getReadProvidersConfig(updatedAllProviders)
-    const updatedAllTranslateProviders = getTranslateProvidersConfig(updatedAllProviders)
-    const updatedAllTTSProviders = getTTSProvidersConfig(updatedAllProviders)
-    if (updatedAllReadProviders.length === 0 || updatedAllTranslateProviders.length === 0) {
-      toast.error(i18n.t('options.apiProviders.form.atLeastOneProvider'))
-      return
-    }
-
-    if (readConfig.providerId === providerConfig.id) {
-      await setReadConfig({ providerId: updatedAllReadProviders[0].id })
-    }
-    if (translateConfig.providerId === providerConfig.id) {
-      await setTranslateConfig({ providerId: chooseNextProviderConfig(updatedAllTranslateProviders).id })
-    }
-    if (ttsConfig.providerId === providerConfig.id) {
-      if (updatedAllTTSProviders.length === 0) {
-        await setTtsConfig({ providerId: null })
-      }
-      else {
-        await setTtsConfig({ providerId: updatedAllTTSProviders[0].id })
-      }
-    }
-    await setAllProvidersConfig(updatedAllProviders)
-    setSelectedProviderId(chooseNextProviderConfig(updatedAllProviders).id)
   }
 
   return (
@@ -106,7 +74,7 @@ export function ProviderConfigForm() {
             name="name"
             validators={{
               onChange: ({ value }) => {
-                const duplicateProvider = allProvidersConfig.find(provider =>
+                const duplicateProvider = providersConfig.find(provider =>
                   provider.name === value && provider.id !== providerConfig.id,
                 )
                 if (duplicateProvider) {
@@ -127,7 +95,81 @@ export function ProviderConfigForm() {
           {providerType === 'genai'
             && isGenAIProviderConfig(providerConfig)
             && (
-              <GenAISessionActions providerConfig={providerConfig} />
+              <div className="space-y-3">
+                <div className="rounded-lg border border-dashed border-muted-foreground/40 bg-muted/40 p-3 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">{i18n.t('options.apiProviders.genaiCookieBridge.title')}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {i18n.t('options.apiProviders.genaiCookieBridge.description')}
+                      </p>
+                    </div>
+                    <form.Field name="cookieBridge.enabled">
+                      {field => (
+                        <Switch
+                          checked={Boolean(field.state.value)}
+                          onCheckedChange={(checked) => {
+                            field.handleChange(Boolean(checked))
+                          }}
+                        />
+                      )}
+                    </form.Field>
+                  </div>
+                  <form.AppField
+                    name="cookieBridge.port"
+                    validators={{
+                      onChange: ({ value }) => {
+                        if (typeof value !== 'number' || Number.isNaN(value))
+                          return i18n.t('options.apiProviders.genaiCookieBridge.port.invalid')
+                        if (value < 1 || value > 65535)
+                          return i18n.t('options.apiProviders.genaiCookieBridge.port.range')
+                        return undefined
+                      },
+                    }}
+                  >
+                    {field => (
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-muted-foreground" htmlFor="genai-cookie-bridge-port">
+                          {i18n.t('options.apiProviders.genaiCookieBridge.port.label')}
+                        </label>
+                        <Input
+                          id="genai-cookie-bridge-port"
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={65535}
+                          disabled={!cookieBridgeEnabled}
+                          value={Number.isFinite(field.state.value) ? field.state.value : ''}
+                          onChange={(event) => {
+                            const rawValue = event.currentTarget.value
+                            const numericValue = rawValue === '' ? NaN : Number(rawValue)
+                            field.handleChange(numericValue)
+                          }}
+                          onBlur={(event) => {
+                            const numericValue = Number(event.currentTarget.value)
+                            if (Number.isNaN(numericValue))
+                              return
+                            const clamped = Math.max(1, Math.min(65535, Math.trunc(numericValue)))
+                            if (clamped !== field.state.value)
+                              field.handleChange(clamped)
+                          }}
+                        />
+                        {field.state.meta.errors[0] && (
+                          <p className="text-xs text-destructive">
+                            {typeof field.state.meta.errors[0] === 'string'
+                              ? field.state.meta.errors[0]
+                              : field.state.meta.errors[0]?.message ?? String(field.state.meta.errors[0])}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {i18n.t('options.apiProviders.genaiCookieBridge.port.help')}
+                        </p>
+                      </div>
+                    )}
+                  </form.AppField>
+                </div>
+                <GenAISessionActions providerConfig={providerConfig} />
+              </div>
             )}
           {isTranslateProviderName && (
             <>
@@ -143,11 +185,6 @@ export function ProviderConfigForm() {
               <ReadModelSelector form={form} />
             </>
           )}
-        </div>
-        <div className="flex justify-end mt-8">
-          <Button type="button" variant="destructive" onClick={handleDelete}>
-            {i18n.t('options.apiProviders.form.delete')}
-          </Button>
         </div>
       </div>
     </form.AppForm>

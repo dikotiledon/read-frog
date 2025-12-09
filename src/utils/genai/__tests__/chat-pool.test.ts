@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GenAIProviderConfig } from '@/types/config/provider'
+import { GENAI_COOKIE_BRIDGE_DEFAULT_PORT } from '@/utils/constants/providers'
 import { GENAI_CHAT_IDLE_TTL_MS, GENAI_CHAT_MAX_SLOTS_PER_KEY } from '../constants'
 const storageMock = vi.hoisted(() => {
   const state: Record<string, any> = {}
@@ -28,6 +29,10 @@ const baseProviderConfig: GenAIProviderConfig = {
   provider: 'genai',
   baseURL: 'https://genai.sec.samsung.net',
   description: 'test',
+  cookieBridge: {
+    enabled: false,
+    port: GENAI_COOKIE_BRIDGE_DEFAULT_PORT,
+  },
   models: {
     read: {
       model: 'GPT-OSS',

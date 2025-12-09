@@ -18,6 +18,7 @@ export async function executeTranslate(
     isBatch?: boolean
     content?: ArticleContent
     chunkMetadata?: TranslationChunkMetadata
+    clientRequestId?: string
   },
 ) {
   const cleanText = text.replace(/\u200B/g, '').trim()

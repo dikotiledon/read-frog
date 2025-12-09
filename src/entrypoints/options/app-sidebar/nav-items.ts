@@ -7,7 +7,7 @@ import { StatisticsPage } from '../pages/statistics'
 import { TextToSpeechPage } from '../pages/text-to-speech'
 import { TranslationPage } from '../pages/translation'
 
-type NavItemTitle = 'general' | 'apiProviders' | 'translation' | 'floatingButtonAndToolbar' | 'tts' | 'config' | 'whatsNew' | 'survey' | 'statistics'
+type NavItemTitle = 'general' | 'apiProviders' | 'translation' | 'floatingButtonAndToolbar' | 'tts' | 'config' | 'statistics'
 
 interface ComponentNavItem {
   type: 'component'
@@ -80,19 +80,4 @@ export const SETTING_NAV_ITEMS = {
   },
 } as const satisfies Record<string, NavItem>
 
-export const PRODUCT_NAV_ITEMS = {
-  'whats-new': {
-    type: 'external',
-    title: 'whatsNew',
-    action: true,
-    externalUrl: `${WEBSITE_URL}/blog?latest-indicator=true`,
-    icon: 'tabler:sparkles',
-  },
-  'survey': {
-    type: 'external',
-    title: 'survey',
-    action: true,
-    externalUrl: 'https://tally.so/r/nrxr6L',
-    icon: 'tabler:message-question',
-  },
-} as const satisfies Record<string, NavItem>
+export const PRODUCT_NAV_ITEMS = {} as const satisfies Record<string, NavItem>

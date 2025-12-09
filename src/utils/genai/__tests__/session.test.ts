@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GenAIProviderConfig } from '@/types/config/provider'
+import { GENAI_COOKIE_BRIDGE_DEFAULT_PORT } from '@/utils/constants/providers'
 import { ensureGenAISession } from '../session'
 import { GENAI_DEFAULT_BASE_URL, GENAI_SESSION_RETRY_INTERVAL_MS } from '../constants'
 
@@ -44,6 +45,10 @@ const baseConfig: GenAIProviderConfig = {
   provider: 'genai',
   baseURL: GENAI_DEFAULT_BASE_URL,
   description: 'test',
+  cookieBridge: {
+    enabled: false,
+    port: GENAI_COOKIE_BRIDGE_DEFAULT_PORT,
+  },
   models: {
     read: {
       model: 'GPT-OSS',

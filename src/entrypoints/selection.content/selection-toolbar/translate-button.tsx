@@ -21,7 +21,6 @@ import { getProviderOptions } from '@/utils/constants/model'
 import { getIsFirefoxExtensionEnv } from '@/utils/firefox/firefox-compat'
 import { createPortStreamPromise } from '@/utils/firefox/firefox-streaming'
 import { deeplxTranslate, googleTranslate, microsoftTranslate } from '@/utils/host/translate/api'
-import { genaiTranslate } from '@/utils/genai/client'
 import { translateText } from '@/utils/host/translate/translate-text'
 import { getTranslatePrompt } from '@/utils/prompts/translate'
 import { getTranslateModelById } from '@/utils/providers/model'
@@ -107,14 +106,6 @@ export function TranslatePopover() {
       cancelTranslation = undefined
 
       try {
-        if (isGenAIProviderConfig(translateProviderConfig)) {
-          const normalized = (await genaiTranslate(cleanText, targetLangName, translateProviderConfig)).trim()
-          if (isCancelled)
-            return
-          setTranslatedText(normalized === cleanText ? '' : normalized)
-          return
-        }
-
         if (isFirefoxExtensionEnv && isLLMTranslateProviderConfig(translateProviderConfig)) {
           const {
             id: providerId,
@@ -204,7 +195,7 @@ export function TranslatePopover() {
         }
         else if (isLLMTranslateProviderConfig(translateProviderConfig)) {
           if (isGenAIProviderConfig(translateProviderConfig)) {
-            const normalized = (await genaiTranslate(cleanText, targetLangName, translateProviderConfig)).trim()
+            const normalized = (await translateText(cleanText)).trim()
             if (!isCancelled)
               setTranslatedText(normalized === cleanText ? '' : normalized)
             return

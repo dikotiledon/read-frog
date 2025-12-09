@@ -237,6 +237,10 @@ export const baseCustomLLMProviderConfigSchema = baseAPIProviderConfigSchema.ext
 const llmProviderConfigSchemaList = [
   baseAPIProviderConfigSchema.extend({
     provider: z.literal('genai'),
+    cookieBridge: z.object({
+      enabled: z.boolean(),
+      port: z.number().int().min(1).max(65535),
+    }),
     models: createProviderModelsSchema<'genai'>('genai'),
   }),
   baseCustomLLMProviderConfigSchema.extend({

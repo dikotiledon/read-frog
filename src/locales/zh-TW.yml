@@ -128,6 +128,14 @@ options:
       openFailed: Could not open Samsung GenAI in a new tab.
       lastChecked: Last checked $1
       notChecked: Session has not been checked yet.
+    genaiCookieBridge:
+      title: Cookie Bridge
+      description: 當本機執行 LiveCaptions Translator 桌面版時，會透過 localhost 自動推送三星 GenAI Cookie。僅在需要與桌面應用同步時啟用。
+      port:
+        label: 橋接埠
+        help: 必須與 LiveCaptions Translator 顯示的埠號一致（預設 17891）。
+        invalid: 請輸入有效的埠號。
+        range: 埠號必須介於 1 到 65535 之間。
   general:
     title: 通用
     readConfig:
