@@ -5,6 +5,7 @@ export const GENAI_ENDPOINTS = {
   chats: '/api/chat/v1/chats',
   messages: '/api/chat/v1/messages',
   messagesResponse: '/api/chat/v1/messages-response',
+  messagesResponseCancel: '/api/chat/v1/messages-response/cancel',
   message: (guid: string) => `/api/chat/v1/messages/${guid}`,
 } as const
 

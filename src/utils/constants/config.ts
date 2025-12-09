@@ -17,7 +17,7 @@ import { DEFAULT_TTS_CONFIG } from './tts'
 
 export const CONFIG_STORAGE_KEY = 'config'
 export const CONFIG_SCHEMA_VERSION_STORAGE_KEY = '__configSchemaVersion'
-export const CONFIG_SCHEMA_VERSION = 38
+export const CONFIG_SCHEMA_VERSION = 39
 
 export const DEFAULT_FLOATING_BUTTON_POSITION = 0.66
 
@@ -35,6 +35,7 @@ export const DEFAULT_CONFIG: Config = {
   translate: {
     providerId: 'genai-default',
     mode: 'bilingual',
+    useGenAIBatching: true,
     node: {
       enabled: true,
       hotkey: 'Control',

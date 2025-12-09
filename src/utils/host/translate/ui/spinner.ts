@@ -76,6 +76,7 @@ export async function getTranslatedTextAndRemoveSpinner(
   let translatedText: string | undefined
   const translationPromise = translateText(textContent, {
     chunkMetadata: options?.chunkMetadata,
+    signal,
   })
 
   const abortPromise = signal

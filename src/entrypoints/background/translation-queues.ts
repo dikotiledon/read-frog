@@ -40,6 +40,55 @@ interface TranslateBatchData {
   chunkMetadata?: TranslationChunkMetadata
 }
 
+interface GenAIBatchChunkData {
+  text: string
+  hash: string
+  chunkMetadata?: TranslationChunkMetadata
+}
+
+type TranslationCacheEntry = { translation: string }
+
+const RECOVERABLE_GENAI_RESPONSE_CODES = new Set(['R50004'])
+const RECOVERABLE_GENAI_ERROR_PATTERNS = [
+  /Unexpected token\s+200007/i,
+  /Model Execution Error/i,
+]
+const GENAI_BATCH_MISMATCH_ERROR_PREFIX = 'GenAI batch result mismatch'
+
+type RecoverableBatchErrorReason = 'response-code' | 'message-pattern' | 'result-mismatch' | 'unknown'
+
+interface BatchErrorClassification {
+  recoverable: boolean
+  reason: RecoverableBatchErrorReason
+  code: string | null
+}
+
+function extractGenAIResponseCode(message: string): string | null {
+  const match = message.match(/R\d{5}/i)
+  return match ? match[0].toUpperCase() : null
+}
+
+function classifyGenAIBatchError(error: unknown): BatchErrorClassification {
+  if (!(error instanceof Error)) {
+    return { recoverable: false, reason: 'unknown', code: null }
+  }
+
+  const responseCode = extractGenAIResponseCode(error.message)
+  if (responseCode && RECOVERABLE_GENAI_RESPONSE_CODES.has(responseCode)) {
+    return { recoverable: true, reason: 'response-code', code: responseCode }
+  }
+
+  if (RECOVERABLE_GENAI_ERROR_PATTERNS.some(pattern => pattern.test(error.message))) {
+    return { recoverable: true, reason: 'message-pattern', code: responseCode }
+  }
+
+  if (error.message.startsWith(GENAI_BATCH_MISMATCH_ERROR_PREFIX)) {
+    return { recoverable: true, reason: 'result-mismatch', code: null }
+  }
+
+  return { recoverable: false, reason: 'unknown', code: responseCode }
+}
+
 const clientRequestRegistry = new Map<string, { tabId?: number }>()
 const tabToClientRequestIds = new Map<number, Set<string>>()
 let hasRegisteredTabRemovalListener = false
@@ -281,7 +330,7 @@ export async function setUpRequestQueue() {
   })
 
   if (!hasRegisteredTabRemovalListener) {
-    browser.tabs.onRemoved.addListener((tabId) => {
+    browser.tabs.onRemoved.addListener((tabId: number) => {
       const requestIds = tabToClientRequestIds.get(tabId)
       if (!requestIds?.size)
         return
@@ -296,7 +345,7 @@ export async function setUpRequestQueue() {
     hasRegisteredTabRemovalListener = true
   }
 
-  onMessage('enqueueTranslateRequest', async (message) => {
+  onMessage('enqueueTranslateRequest', async (message: any) => {
     const { data: { text, langConfig, providerConfig, scheduleAt, hash, articleTitle, articleTextContent, clientRequestId, chunkMetadata } } = message
     const tabId = message.sender.tab?.id
 
@@ -364,13 +413,157 @@ export async function setUpRequestQueue() {
     }
   })
 
-  onMessage('setTranslateRequestQueueConfig', (message) => {
+  onMessage('enqueueGenAIBatch', async (message: any) => {
+    const { data } = message
+    const { langConfig, providerConfig, scheduleAt, clientRequestId, articleTitle, articleTextContent } = data
+    const chunks: GenAIBatchChunkData[] = data.chunks
+    const tabId = message.sender.tab?.id
+
+    if (!isGenAIProviderConfig(providerConfig))
+      throw new Error('enqueueGenAIBatch requires a GenAI provider config')
+
+    registerClientRequest(clientRequestId, tabId)
+
+    try {
+      if (!chunks.length)
+        return []
+
+      const chunkHashes = chunks.map(chunk => chunk.hash)
+      const cachedEntries = await Promise.all(chunkHashes.map(hash => db.translationCache.get(hash))) as Array<TranslationCacheEntry | undefined>
+      if (cachedEntries.every(entry => entry?.translation))
+        return cachedEntries.map(entry => entry?.translation ?? '')
+
+      const content: ArticleContent = {
+        title: articleTitle || '',
+      }
+
+      const config = await ensureInitializedConfig()
+      if (config?.translate.enableAIContentAware && articleTitle !== undefined && articleTextContent !== undefined)
+        content.summary = await getOrGenerateSummary(articleTitle, articleTextContent, providerConfig)
+
+      const chunkMetadataList = chunks.map(chunk => chunk.chunkMetadata)
+      const batchText = chunks.map(chunk => chunk.text).join(`\n\n${BATCH_SEPARATOR}\n\n`)
+      const aggregateHash = Sha256Hex(...chunkHashes)
+      const effectiveBatchLimit = resolveProviderBatchLimit(providerConfig, maxCharactersPerBatch)
+
+      const runTask = async (): Promise<string[]> => {
+        await putBatchRequestRecord({ originalRequestCount: chunks.length, providerConfig })
+        const rawResult = await executeTranslate(batchText, langConfig, providerConfig, {
+          isBatch: true,
+          content,
+          chunkMetadataList,
+          clientRequestId,
+        })
+        return parseBatchResult(rawResult)
+      }
+
+      const translateChunksIndividually = async (fallbackReason: string): Promise<string[]> => {
+        logger.warn('[GenAI Batch] Falling back to individual chunk translations', {
+          providerId: providerConfig.id,
+          chunkCount: chunks.length,
+          fallbackReason,
+        })
+
+        const individualResults: string[] = []
+        for (let index = 0; index < chunks.length; index++) {
+          const cachedEntry = cachedEntries[index]
+          if (cachedEntry?.translation) {
+            individualResults.push(cachedEntry.translation)
+            continue
+          }
+
+          const chunk = chunks[index]
+          const translation = await enqueueGenAIRequest({
+            text: chunk.text,
+            langConfig,
+            providerConfig,
+            hash: chunk.hash,
+            scheduleAt,
+            content,
+            maxCharsPerRequest: effectiveBatchLimit,
+            clientRequestId,
+            tabId,
+            chunkMetadata: chunk.chunkMetadata,
+          })
+          individualResults.push(translation)
+        }
+
+        return individualResults
+      }
+
+      const attemptBatch = async (): Promise<string[]> => {
+        const translations = await requestQueue.enqueue(runTask, scheduleAt, aggregateHash)
+        if (translations.length !== chunks.length)
+          throw new Error(`${GENAI_BATCH_MISMATCH_ERROR_PREFIX}: expected ${chunks.length}, got ${translations.length}`)
+        return translations
+      }
+
+      const executeBatchWithFallback = async (): Promise<string[]> => {
+        const MAX_BATCH_ATTEMPTS = 2
+        for (let attempt = 0; attempt < MAX_BATCH_ATTEMPTS; attempt++) {
+          try {
+            return await attemptBatch()
+          }
+          catch (error) {
+            const classification = classifyGenAIBatchError(error)
+            if (!classification.recoverable)
+              throw error
+
+            if (attempt < MAX_BATCH_ATTEMPTS - 1) {
+              logger.warn('[GenAI Batch] Recoverable error during batch attempt, retrying once', {
+                providerId: providerConfig.id,
+                attempt: attempt + 1,
+                reason: classification.reason,
+                responseCode: classification.code,
+              })
+              continue
+            }
+
+            return await translateChunksIndividually(classification.reason)
+          }
+        }
+        throw new Error('GenAI batch attempts exhausted')
+      }
+
+      const backlogSize = incrementGenAIBacklog(providerConfig)
+      requestGenAIWarmSlots(providerConfig, backlogSize)
+
+      try {
+        const translations = await executeBatchWithFallback()
+
+        await Promise.all(translations.map(async (translation, index) => {
+          const hash = chunkHashes[index]
+          if (!hash)
+            return
+          await db.translationCache.put({
+            key: hash,
+            translation,
+            createdAt: new Date(),
+          })
+        }))
+
+        return translations
+      }
+      finally {
+        decrementGenAIBacklog(providerConfig)
+      }
+    }
+    finally {
+      releaseClientRequest(clientRequestId)
+    }
+  })
+
+  onMessage('setTranslateRequestQueueConfig', (message: any) => {
     const { data } = message
     requestQueue.setQueueOptions(data)
   })
 
-  onMessage('setTranslateBatchQueueConfig', (message) => {
+  onMessage('setTranslateBatchQueueConfig', (message: any) => {
     const { data } = message
     batchQueue.setBatchConfig(data)
   })
+}
+
+export const __private__ = {
+  classifyGenAIBatchError,
 }

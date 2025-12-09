@@ -42,6 +42,19 @@ interface ProtocolMap {
     articleTextContent?: string
     chunkMetadata?: TranslationChunkMetadata
   }) => Promise<string>
+  enqueueGenAIBatch: (data: {
+    chunks: Array<{
+      text: string
+      hash: string
+      chunkMetadata?: TranslationChunkMetadata
+    }>
+    langConfig: Config['language']
+    providerConfig: ProviderConfig
+    scheduleAt: number
+    clientRequestId: string
+    articleTitle?: string
+    articleTextContent?: string
+  }) => Promise<string[]>
   setTranslateRequestQueueConfig: (data: Partial<RequestQueueConfig>) => void
   setTranslateBatchQueueConfig: (data: Partial<BatchQueueConfig>) => void
   // network proxy

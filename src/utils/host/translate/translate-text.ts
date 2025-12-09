@@ -6,7 +6,7 @@ import { LANG_CODE_TO_EN_NAME, LANG_CODE_TO_LOCALE_NAME } from '@read-frog/defin
 import { providerRequiresAPIKey } from '@/types/config/provider'
 import { franc } from 'franc-min'
 import { toast } from 'sonner'
-import { isAPIProviderConfig, isLLMTranslateProviderConfig } from '@/types/config/provider'
+import { isAPIProviderConfig, isGenAIProviderConfig, isLLMTranslateProviderConfig } from '@/types/config/provider'
 import { getProviderConfigById } from '@/utils/config/helpers'
 import { getFinalSourceCode } from '@/utils/config/languages'
 import { removeDummyNodes } from '@/utils/content/utils'
@@ -16,6 +16,7 @@ import { getConfigFromStorage } from '../../config/config'
 import { Sha256Hex } from '../../hash'
 import { sendMessage } from '../../message'
 import type { TranslationChunkMetadata } from '@/types/translation-chunk'
+import { getGenAIBatchController } from './core/genai-batch-controller'
 
 const MIN_LENGTH_FOR_LANG_DETECTION = 50
 
@@ -129,7 +130,12 @@ async function buildHashComponents(
   return hashComponents
 }
 
-export async function translateText(text: string, options?: { chunkMetadata?: TranslationChunkMetadata }) {
+type TranslateTextOptions = {
+  chunkMetadata?: TranslationChunkMetadata
+  signal?: AbortSignal
+}
+
+export async function translateText(text: string, options?: TranslateTextOptions) {
   const config = await getConfigFromStorage()
   if (!config) {
     throw new Error('No global config when translate text')
@@ -180,14 +186,33 @@ export async function translateText(text: string, options?: { chunkMetadata?: Tr
   if (typeof chunkMetadata?.total === 'number')
     hashComponents.push(`chunkTotal:${chunkMetadata.total}`)
 
+  const hash = Sha256Hex(...hashComponents)
+
+  const scheduleAt = Date.now()
   const clientRequestId = crypto.randomUUID()
+
+  if (isGenAIProviderConfig(providerConfig) && config.translate.useGenAIBatching) {
+    const controller = getGenAIBatchController()
+    return await controller.enqueue({
+      text,
+      hash,
+      langConfig,
+      providerConfig,
+      batchQueueConfig: config.translate.batchQueueConfig,
+      scheduleAt,
+      articleTitle,
+      articleTextContent,
+      chunkMetadata,
+      signal: options?.signal,
+    })
+  }
 
   return await sendMessage('enqueueTranslateRequest', {
     text,
     langConfig,
     providerConfig,
-    scheduleAt: Date.now(),
-    hash: Sha256Hex(...hashComponents),
+    scheduleAt,
+    hash,
     clientRequestId,
     articleTitle,
     articleTextContent,

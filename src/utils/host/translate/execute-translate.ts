@@ -18,6 +18,7 @@ export async function executeTranslate(
     isBatch?: boolean
     content?: ArticleContent
     chunkMetadata?: TranslationChunkMetadata
+    chunkMetadataList?: Array<TranslationChunkMetadata | undefined>
     clientRequestId?: string
   },
 ) {

@@ -12,6 +12,10 @@ vi.mock('@/utils/message', () => ({
   sendMessage: vi.fn(),
 }))
 
+vi.mock('@/utils/host/translate/core/genai-batch-controller', () => ({
+  getGenAIBatchController: vi.fn(),
+}))
+
 vi.mock('@/utils/host/translate/api/microsoft', () => ({
   microsoftTranslate: vi.fn(),
 }))
@@ -24,6 +28,8 @@ let mockSendMessage: any
 let mockMicrosoftTranslate: any
 let mockGetConfigFromStorage: any
 let mockGetTranslatePrompt: any
+let mockGetGenAIBatchController: any
+let mockCancelChunk: any
 
 describe('translate-text', () => {
   beforeEach(async () => {
@@ -32,6 +38,12 @@ describe('translate-text', () => {
     mockMicrosoftTranslate = vi.mocked((await import('@/utils/host/translate/api/microsoft')).microsoftTranslate)
     mockGetConfigFromStorage = vi.mocked((await import('@/utils/config/config')).getConfigFromStorage)
     mockGetTranslatePrompt = vi.mocked((await import('@/utils/prompts/translate')).getTranslatePrompt)
+    mockGetGenAIBatchController = vi.mocked((await import('@/utils/host/translate/core/genai-batch-controller')).getGenAIBatchController)
+    mockCancelChunk = vi.fn()
+    mockGetGenAIBatchController.mockReturnValue({
+      enqueue: vi.fn().mockResolvedValue('batch translation default'),
+      cancelChunk: mockCancelChunk,
+    })
 
     // Mock getConfigFromStorage to return DEFAULT_CONFIG
     mockGetConfigFromStorage.mockResolvedValue(DEFAULT_CONFIG)
@@ -42,6 +54,13 @@ describe('translate-text', () => {
 
   describe('translateText', () => {
     it('should send message with correct parameters', async () => {
+      mockGetConfigFromStorage.mockResolvedValueOnce({
+        ...DEFAULT_CONFIG,
+        translate: {
+          ...DEFAULT_CONFIG.translate,
+          providerId: 'microsoft-default',
+        },
+      })
       mockSendMessage.mockResolvedValue('translated text')
 
       const result = await translateText('test text')
@@ -54,6 +73,54 @@ describe('translate-text', () => {
         scheduleAt: expect.any(Number),
         hash: expect.any(String),
         clientRequestId: expect.any(String),
+      }))
+    })
+
+    it('uses GenAI batch controller when flag is enabled', async () => {
+      const mockEnqueue = vi.fn().mockResolvedValue('batch translation')
+      mockGetGenAIBatchController.mockReturnValue({ enqueue: mockEnqueue, cancelChunk: vi.fn() })
+
+      const result = await translateText('batched text')
+
+      expect(result).toBe('batch translation')
+      expect(mockEnqueue).toHaveBeenCalledTimes(1)
+      expect(mockEnqueue).toHaveBeenCalledWith(expect.objectContaining({
+        text: 'batched text',
+        batchQueueConfig: DEFAULT_CONFIG.translate.batchQueueConfig,
+      }))
+      expect(mockSendMessage).not.toHaveBeenCalled()
+    })
+
+    it('falls back to single request when GenAI batching is disabled', async () => {
+      mockGetConfigFromStorage.mockResolvedValueOnce({
+        ...DEFAULT_CONFIG,
+        translate: {
+          ...DEFAULT_CONFIG.translate,
+          useGenAIBatching: false,
+        },
+      })
+      mockSendMessage.mockResolvedValue('legacy translation')
+
+      const result = await translateText('fallback text')
+
+      expect(result).toBe('legacy translation')
+      expect(mockGetGenAIBatchController).not.toHaveBeenCalled()
+      expect(mockSendMessage).toHaveBeenCalledWith('enqueueTranslateRequest', expect.objectContaining({
+        text: 'fallback text',
+      }))
+    })
+
+    it('forwards abort signal to GenAI batch controller', async () => {
+      const mockEnqueue = vi.fn().mockResolvedValue('sig translation')
+      const mockController = { enqueue: mockEnqueue, cancelChunk: vi.fn() }
+      mockGetGenAIBatchController.mockReturnValue(mockController)
+
+      const abortController = new AbortController()
+      await translateText('signal text', { signal: abortController.signal })
+
+      expect(mockEnqueue).toHaveBeenCalledWith(expect.objectContaining({
+        text: 'signal text',
+        signal: abortController.signal,
       }))
     })
   })

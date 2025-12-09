@@ -567,6 +567,48 @@ async function readEventStream(response: Response, options?: { signal?: AbortSig
   }
 }
 
+function forwardAbortSignal(source: AbortSignal | null | undefined, targetController: AbortController): () => void {
+  if (!source)
+    return () => {}
+
+  const listener = () => {
+    if (targetController.signal.aborted)
+      return
+    const abortReason = (source as AbortSignal & { reason?: unknown }).reason
+    targetController.abort(abortReason ?? createAbortError('GenAI request aborted by linked signal'))
+  }
+
+  source.addEventListener('abort', listener)
+  return () => source.removeEventListener('abort', listener)
+}
+
+function createMessageResponseCanceler(baseURL: string, messageGuid: string) {
+  let invoked = false
+  return async (reason?: string) => {
+    if (invoked)
+      return
+    invoked = true
+
+    try {
+      await genaiFetch(baseURL, GENAI_ENDPOINTS.messagesResponseCancel, {
+        method: 'POST',
+        body: JSON.stringify({ messageGuid }),
+      })
+      logger.info('[GenAI] Cancelled messages-response stream', {
+        messageGuid,
+        reason,
+      })
+    }
+    catch (error) {
+      logger.warn('[GenAI] Failed to cancel messages-response stream', {
+        messageGuid,
+        reason,
+        error,
+      })
+    }
+  }
+}
+
 async function waitForAssistantMessage(
   baseURL: string,
   chatGuid: string,
@@ -795,6 +837,7 @@ type GenAIExecutionOptions = {
   isBatch?: boolean
   content?: ArticleContent
   chunkMetadata?: TranslationChunkMetadata
+  chunkMetadataList?: Array<TranslationChunkMetadata | undefined>
   clientRequestId?: string
 }
 
@@ -847,6 +890,8 @@ export async function genaiTranslate(
 
           const parentGuid = chatLease.parentMessageGuid ?? undefined
           let messageGuid: string
+          let cancelMessagesResponse: ((reason?: string) => Promise<void>) | null = null
+          let messageResponseCompleted = false
           try {
             messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, combinedContent, parentGuid, { signal: abortController.signal })
           }
@@ -880,27 +925,73 @@ export async function genaiTranslate(
 
           chatLease.setPendingMessageGuid(messageGuid)
           pendingSet = true
+          cancelMessagesResponse = createMessageResponseCanceler(baseURL, messageGuid)
 
           const modelRef = getModelName(providerConfig, 'translate')
           const modelGuid = resolveGenAIModelGuid(modelRef)
 
-          const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid, { signal: abortController.signal })
-          const translationResult = await waitForMessageContent(baseURL, assistantGuid, {
-            fallbackContent,
-            onInvalidateChat: chatLease.invalidate,
-            signal: abortController.signal,
-          })
+          let messageFailureError: Error | null = null
+          const messagesResponseAbortController = new AbortController()
+          const unlinkMessageResponseAbort = forwardAbortSignal(abortController.signal, messagesResponseAbortController)
+          const completionAbortController = new AbortController()
+          const unlinkCompletionAbort = forwardAbortSignal(abortController.signal, completionAbortController)
 
-          pendingMessageSettled = translationResult.completed
+          const completionMonitor = (async () => {
+            try {
+              await waitForMessageCompletion(baseURL, messageGuid, { signal: completionAbortController.signal })
+            }
+            catch (error) {
+              if (isAbortError(error))
+                return
+              const normalizedError = error instanceof Error ? error : new Error(String(error))
+              messageFailureError = normalizedError
+              if (!messagesResponseAbortController.signal.aborted)
+                messagesResponseAbortController.abort(normalizedError)
+            }
+          })()
 
-          if (translationResult.completed)
-            chatLease.setParentMessageGuid(assistantGuid)
-          else {
-            shouldResetChat = true
-            resetReason = 'response-incomplete'
+          try {
+            const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid, { signal: messagesResponseAbortController.signal })
+            messageResponseCompleted = true
+
+            completionAbortController.abort()
+            await completionMonitor
+
+            const translationResult = await waitForMessageContent(baseURL, assistantGuid, {
+              fallbackContent,
+              onInvalidateChat: chatLease.invalidate,
+              signal: abortController.signal,
+            })
+
+            pendingMessageSettled = translationResult.completed
+
+            if (translationResult.completed)
+              chatLease.setParentMessageGuid(assistantGuid)
+            else {
+              shouldResetChat = true
+              resetReason = 'response-incomplete'
+            }
+
+            return normalizeAssistantResponse(translationResult.content)
           }
+          catch (error) {
+            completionAbortController.abort()
+            await completionMonitor
 
-          return normalizeAssistantResponse(translationResult.content)
+            if (!messageResponseCompleted)
+              void cancelMessagesResponse?.(isAbortError(error) ? 'request-aborted' : 'messages-response-error')
+
+            if (messageFailureError && isAbortError(error))
+              throw messageFailureError
+
+            throw error
+          }
+          finally {
+            messagesResponseAbortController.abort()
+            completionAbortController.abort()
+            unlinkMessageResponseAbort()
+            unlinkCompletionAbort()
+          }
         }
 
         if (shouldResetChat)
@@ -988,6 +1079,8 @@ export async function genaiGenerateText(
 
           const parentGuid = chatLease.parentMessageGuid ?? undefined
           let messageGuid: string
+          let cancelMessagesResponse: ((reason?: string) => Promise<void>) | null = null
+          let messageResponseCompleted = false
           try {
             messageGuid = await sendUserMessage(baseURL, chatLease.chatGuid, content, parentGuid, { signal: abortController.signal })
           }
@@ -1021,11 +1114,23 @@ export async function genaiGenerateText(
 
           chatLease.setPendingMessageGuid(messageGuid)
           pendingSet = true
+          cancelMessagesResponse = createMessageResponseCanceler(baseURL, messageGuid)
 
           const modelRef = getModelName(providerConfig, modelType)
           const modelGuid = resolveGenAIModelGuid(modelRef)
 
-          const { responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid, { signal: abortController.signal })
+          let assistantGuid: string
+          let fallbackContent: string | null
+          try {
+            ({ responseGuid: assistantGuid, fallbackContent } = await waitForAssistantMessage(baseURL, chatLease.chatGuid, messageGuid, modelGuid, { signal: abortController.signal }))
+            messageResponseCompleted = true
+          }
+          catch (error) {
+            if (!messageResponseCompleted)
+              void cancelMessagesResponse?.(isAbortError(error) ? 'request-aborted' : 'messages-response-error')
+            throw error
+          }
+
           const textResult = await waitForMessageContent(baseURL, assistantGuid, {
             fallbackContent,
             onInvalidateChat: chatLease.invalidate,

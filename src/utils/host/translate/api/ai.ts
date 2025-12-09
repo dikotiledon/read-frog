@@ -12,6 +12,7 @@ export type AITranslateOptions = {
   isBatch?: boolean
   content?: ArticleContent
   chunkMetadata?: TranslationChunkMetadata
+  chunkMetadataList?: Array<TranslationChunkMetadata | undefined>
   clientRequestId?: string
 }
 
