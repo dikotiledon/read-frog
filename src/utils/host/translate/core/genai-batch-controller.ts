@@ -1,10 +1,10 @@
 import type { Config } from '@/types/config/config'
-import type { BatchQueueConfig } from '@/types/config/translate'
 import type { GenAIProviderConfig } from '@/types/config/provider'
+import type { BatchQueueConfig } from '@/types/config/translate'
 import type { TranslationChunkMetadata } from '@/types/translation-chunk'
-import { sendMessage } from '@/utils/message'
 import { Sha256Hex } from '@/utils/hash'
 import { logger } from '@/utils/logger'
+import { sendMessage } from '@/utils/message'
 
 interface PendingChunk {
   id: string
@@ -139,7 +139,7 @@ class GenAIBatchController {
       this.flushTimer = null
     }
 
-    chunks.forEach(chunk => {
+    chunks.forEach((chunk) => {
       chunk.phase = 'in-flight'
     })
 

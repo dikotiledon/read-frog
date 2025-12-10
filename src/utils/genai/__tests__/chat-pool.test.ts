@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GenAIProviderConfig } from '@/types/config/provider'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GENAI_COOKIE_BRIDGE_DEFAULT_PORT } from '@/utils/constants/providers'
 import { GENAI_CHAT_IDLE_TTL_MS, GENAI_CHAT_MAX_SLOTS_PER_KEY } from '../constants'
+
 const storageMock = vi.hoisted(() => {
   const state: Record<string, any> = {}
   const storage = {

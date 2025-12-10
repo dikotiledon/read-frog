@@ -1,8 +1,9 @@
-import { browser } from '#imports'
 import type { Config } from '@/types/config/config'
 import type { GenAIProviderConfig, LLMTranslateProviderConfig, ProviderConfig, TranslateProviderTypes } from '@/types/config/provider'
 import type { ArticleContent } from '@/types/content'
 import type { TranslationChunkMetadata } from '@/types/translation-chunk'
+
+import { browser } from '#imports'
 import { isGenAIProviderConfig, isLLMTranslateProviderConfig } from '@/types/config/provider'
 import { putBatchRequestRecord } from '@/utils/batch-request-record'
 import { DEFAULT_CONFIG } from '@/utils/constants/config'
@@ -12,15 +13,18 @@ import { MIN_BATCH_CHARACTERS } from '@/utils/constants/translate'
 import { generateArticleSummary } from '@/utils/content/summary'
 import { cleanText } from '@/utils/content/utils'
 import { db } from '@/utils/db/dexie/db'
+import { warmGenAIChatPool } from '@/utils/genai/client'
+import { GENAI_CHAT_MAX_SLOTS_PER_KEY } from '@/utils/genai/constants'
+import { cancelActiveGenAIRequest } from '@/utils/genai/request-registry'
+import { logGenAIReliabilityEvent, resolveGenAIModelName } from '@/utils/genai/telemetry'
 import { Sha256Hex } from '@/utils/hash'
 import { executeTranslate } from '@/utils/host/translate/execute-translate'
 import { logger } from '@/utils/logger'
 import { onMessage } from '@/utils/message'
+import { createPerfTimer } from '@/utils/perf/perf-timer'
 import { BatchQueue } from '@/utils/request/batch-queue'
 import { RequestQueue } from '@/utils/request/request-queue'
-import { warmGenAIChatPool } from '@/utils/genai/client'
-import { GENAI_CHAT_MAX_SLOTS_PER_KEY } from '@/utils/genai/constants'
-import { cancelActiveGenAIRequest } from '@/utils/genai/request-registry'
+
 import { ensureInitializedConfig } from './config'
 
 export function parseBatchResult(result: string): string[] {
@@ -46,7 +50,7 @@ interface GenAIBatchChunkData {
   chunkMetadata?: TranslationChunkMetadata
 }
 
-type TranslationCacheEntry = { translation: string }
+interface TranslationCacheEntry { translation: string }
 
 const RECOVERABLE_GENAI_RESPONSE_CODES = new Set(['R50004'])
 const RECOVERABLE_GENAI_ERROR_PATTERNS = [
@@ -298,7 +302,7 @@ export async function setUpRequestQueue() {
     getCharacters: (data) => {
       return data.text.length
     },
-    getMaxCharactersForTask: (data) => data.maxCharsPerRequest,
+    getMaxCharactersForTask: data => data.maxCharsPerRequest,
     executeBatch: async (dataList) => {
       if (dataList.length === 1)
         return [await enqueueLLMRequest(dataList[0])]
@@ -348,6 +352,11 @@ export async function setUpRequestQueue() {
   onMessage('enqueueTranslateRequest', async (message: any) => {
     const { data: { text, langConfig, providerConfig, scheduleAt, hash, articleTitle, articleTextContent, clientRequestId, chunkMetadata } } = message
     const tabId = message.sender.tab?.id
+    const perf = createPerfTimer(`queue:${clientRequestId}`)
+    perf.step('received', {
+      chars: text.length,
+      providerId: providerConfig.provider,
+    })
 
     registerClientRequest(clientRequestId, tabId)
 
@@ -356,6 +365,7 @@ export async function setUpRequestQueue() {
       if (hash) {
         const cached = await db.translationCache.get(hash)
         if (cached) {
+          perf.step('cache-hit', { hash })
           return cached.translation
         }
       }
@@ -406,10 +416,16 @@ export async function setUpRequestQueue() {
         })
       }
 
+      perf.step('completed', {
+        hash,
+        providerId: providerConfig.provider,
+        cached: false,
+      })
       return result
     }
     finally {
       releaseClientRequest(clientRequestId)
+      perf.step('released')
     }
   })
 
@@ -423,6 +439,8 @@ export async function setUpRequestQueue() {
       throw new Error('enqueueGenAIBatch requires a GenAI provider config')
 
     registerClientRequest(clientRequestId, tabId)
+
+    const telemetryModelName = resolveGenAIModelName(providerConfig, 'translate')
 
     try {
       if (!chunks.length)
@@ -464,31 +482,53 @@ export async function setUpRequestQueue() {
           fallbackReason,
         })
 
-        const individualResults: string[] = []
-        for (let index = 0; index < chunks.length; index++) {
-          const cachedEntry = cachedEntries[index]
-          if (cachedEntry?.translation) {
-            individualResults.push(cachedEntry.translation)
-            continue
+        const now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now())
+        const startedAt = now()
+        let success = false
+
+        try {
+          const individualResults: string[] = []
+          for (let index = 0; index < chunks.length; index++) {
+            const cachedEntry = cachedEntries[index]
+            if (cachedEntry?.translation) {
+              individualResults.push(cachedEntry.translation)
+              continue
+            }
+
+            const chunk = chunks[index]
+            const translation = await enqueueGenAIRequest({
+              text: chunk.text,
+              langConfig,
+              providerConfig,
+              hash: chunk.hash,
+              scheduleAt,
+              content,
+              maxCharsPerRequest: effectiveBatchLimit,
+              clientRequestId,
+              tabId,
+              chunkMetadata: chunk.chunkMetadata,
+            })
+            individualResults.push(translation)
           }
 
-          const chunk = chunks[index]
-          const translation = await enqueueGenAIRequest({
-            text: chunk.text,
-            langConfig,
-            providerConfig,
-            hash: chunk.hash,
-            scheduleAt,
-            content,
-            maxCharsPerRequest: effectiveBatchLimit,
-            clientRequestId,
-            tabId,
-            chunkMetadata: chunk.chunkMetadata,
-          })
-          individualResults.push(translation)
+          success = true
+          return individualResults
         }
-
-        return individualResults
+        finally {
+          const durationMs = Math.max(0, now() - startedAt)
+          void logGenAIReliabilityEvent({
+            type: 'batch-fallback',
+            providerId: providerConfig.id,
+            modelType: 'translate',
+            model: telemetryModelName,
+            reason: fallbackReason,
+            durationMs,
+            metadata: {
+              chunkCount: chunks.length,
+              success,
+            },
+          })
+        }
       }
 
       const attemptBatch = async (): Promise<string[]> => {
@@ -516,9 +556,35 @@ export async function setUpRequestQueue() {
                 reason: classification.reason,
                 responseCode: classification.code,
               })
+              void logGenAIReliabilityEvent({
+                type: 'batch-retry',
+                providerId: providerConfig.id,
+                modelType: 'translate',
+                model: telemetryModelName,
+                reason: classification.reason,
+                responseCode: classification.code,
+                retryCount: attempt + 1,
+                metadata: {
+                  chunkCount: chunks.length,
+                  action: 'retry',
+                },
+              })
               continue
             }
 
+            void logGenAIReliabilityEvent({
+              type: 'batch-retry',
+              providerId: providerConfig.id,
+              modelType: 'translate',
+              model: telemetryModelName,
+              reason: classification.reason,
+              responseCode: classification.code,
+              retryCount: attempt + 1,
+              metadata: {
+                chunkCount: chunks.length,
+                action: 'fallback',
+              },
+            })
             return await translateChunksIndividually(classification.reason)
           }
         }

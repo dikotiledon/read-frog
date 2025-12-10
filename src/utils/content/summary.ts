@@ -1,9 +1,9 @@
 import type { LLMTranslateProviderConfig } from '@/types/config/provider'
 import { generateText } from 'ai'
-import { getProviderOptions } from '@/utils/constants/model'
 import { isGenAIProviderConfig } from '@/types/config/provider'
-import { logger } from '@/utils/logger'
+import { getProviderOptions } from '@/utils/constants/model'
 import { genaiGenerateText } from '@/utils/genai/client'
+import { logger } from '@/utils/logger'
 import { getTranslateModelById } from '@/utils/providers/model'
 import { cleanText } from './utils'
 

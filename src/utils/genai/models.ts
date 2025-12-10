@@ -1,4 +1,4 @@
-import type { TranslateLLMModels, ReadModels } from '@/types/config/provider'
+import type { ReadModels, TranslateLLMModels } from '@/types/config/provider'
 import { GENAI_DEFAULT_MODEL_GUID, GENAI_DEFAULT_MODEL_TITLE } from './constants'
 
 export const GENAI_MODEL_GUIDS: Record<string, { guid: string }> = {

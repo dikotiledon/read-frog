@@ -58,7 +58,7 @@ export const GenAICookieBridgeSettings = withForm({
                 value={Number.isFinite(field.state.value) ? field.state.value : ''}
                 onChange={(event) => {
                   const rawValue = event.currentTarget.value
-                  const numericValue = rawValue === '' ? NaN : Number(rawValue)
+                  const numericValue = rawValue === '' ? Number.NaN : Number(rawValue)
                   field.handleChange(numericValue)
                 }}
                 onBlur={(event) => {

@@ -3,6 +3,7 @@ import { browser } from '#imports'
 import { logger } from '@/utils/logger'
 import { sendMessage } from '@/utils/message'
 import { GENAI_DEFAULT_BASE_URL, GENAI_ENDPOINTS, GENAI_LOGIN_TIMEOUT_MS, GENAI_SESSION_RETRY_INTERVAL_MS } from './constants'
+import { fetchWithGenAIFallback } from './http'
 
 type BrowserAPI = typeof browser
 
@@ -39,7 +40,7 @@ function hasSessionPayloadData(payload: unknown): boolean {
 
 async function fetchSessionStatus(baseURL: string): Promise<boolean> {
   const sessionUrl = joinURL(baseURL, GENAI_ENDPOINTS.session)
-  const response = await fetch(sessionUrl, {
+  const response = await fetchWithGenAIFallback(sessionUrl, {
     method: 'GET',
     credentials: 'include',
   })

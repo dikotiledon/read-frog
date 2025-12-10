@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GenAIProviderConfig } from '@/types/config/provider'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GENAI_COOKIE_BRIDGE_DEFAULT_PORT } from '@/utils/constants/providers'
-import { ensureGenAISession } from '../session'
 import { GENAI_DEFAULT_BASE_URL, GENAI_SESSION_RETRY_INTERVAL_MS } from '../constants'
+import { ensureGenAISession } from '../session'
 
 const tabsCreate = vi.fn()
 const tabsRemove = vi.fn()
@@ -69,7 +69,7 @@ describe('ensureGenAISession', () => {
     tabsCreate.mockReset()
     tabsRemove.mockReset()
     fetchMock = vi.fn<typeof fetch>()
-    global.fetch = fetchMock
+    globalThis.fetch = fetchMock as any
   })
 
   afterEach(() => {

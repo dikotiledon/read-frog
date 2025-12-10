@@ -1,5 +1,4 @@
 import type { TTSModel, TTSVoice } from '@/types/config/tts'
-import { providerRequiresAPIKey } from '@/types/config/provider'
 import { i18n } from '#imports'
 import { IconLoader2, IconPlayerPlayFilled } from '@tabler/icons-react'
 import { useAtom, useAtomValue } from 'jotai'
@@ -17,6 +16,7 @@ import {
 } from '@/components/shadcn/select'
 import ValidatedInput from '@/components/ui/validated-input'
 import { useTextToSpeech } from '@/hooks/use-text-to-speech'
+import { providerRequiresAPIKey } from '@/types/config/provider'
 import { getVoicesForModel, isVoiceAvailableForModel, MAX_TTS_SPEED, MIN_TTS_SPEED, TTS_MODELS, ttsSpeedSchema } from '@/types/config/tts'
 import { configFieldsAtomMap } from '@/utils/atoms/config'
 import { ttsProviderConfigAtom } from '@/utils/atoms/provider'
@@ -63,8 +63,8 @@ function TtsProviderField() {
   return (
     <Field>
       <FieldLabel htmlFor="ttsProvider">
-  {i18n.t('options.tts.provider.label')}
-  {ttsProviderConfig && providerRequiresAPIKey(ttsProviderConfig.provider) && !ttsProviderConfig.apiKey && <SetApiKeyWarning />}
+        {i18n.t('options.tts.provider.label')}
+        {ttsProviderConfig && providerRequiresAPIKey(ttsProviderConfig.provider) && !ttsProviderConfig.apiKey && <SetApiKeyWarning />}
       </FieldLabel>
       <Select
         value={ttsConfig.providerId || undefined}

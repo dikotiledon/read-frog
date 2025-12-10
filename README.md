@@ -123,6 +123,21 @@ Join our growing community of language learners and help shape the future of Rea
 
 </div>
 
+## ⚡ Translation-Only Performance Plan
+
+To make the **Translation Only** mode feel instant on long-form pages, we track and optimize the full pipeline—DOM extraction → chunking → provider requests → rendering. The plan below doubles as a checklist for contributors:
+
+- **Baseline & Profiling**: instrumentation (see `translator/README.md`) captures extraction, queue wait, API latency, and overlay render cost for popup vs floating button. Sample stats live in the profiling appendix and must be updated before/after every major optimization.
+- **Queue Tuning**: `request-queue.ts` now exposes a translation-only profile (3–4 concurrent chunks, reduced jitter). `translation-queues.ts` picks the profile whenever Translation Only mode is active so batches leave the queue faster.
+- **Chunk Strategy**: `sendInBatchesWithFixedDelay` and `TranslationTaskQueue` merge adjacent short paragraphs and keep chunk length within ~400–600 characters, preventing tiny payloads that waste round-trips while respecting provider token budgets.
+- **HTML → Plain Text**: incoming payloads pass through the new HTML cleaner (strips tags, preserves semantic hints, collapses whitespace) before hashing, caching, or sending to GenAI. This keeps token counts predictable and removes a major latency cause.
+- **Streaming & Rendering**: `Translator.DisplayLoop` and the React overlay emit each chunk as soon as it lands while trimming `Caption.Contexts` to avoid expensive reflows.
+- **Caching & Dedup**: cleaned-text hashes feed Dexie’s `translationCache`, so revisiting a page reuses translations instantly. GET session checks use `backgroundFetch` cacheConfig to avoid hammering GenAI auth.
+- **Error Fast-Fail & Retries**: provider failures cancel queued work via `AbortController`, show actionable toasts, and let users retry without reloading; recoverable GenAI errors auto-resume with exponential backoff.
+- **Regression Tests**: scripted e2e runs (Val-town snippet, Kompas article, long technical blog) enforce a <3s budget for ~1k words. CI stores the captured metrics so we can spot regressions.
+
+Refer to the profiling appendix in `translator/README.md` for raw traces and update it whenever you touch this pipeline.
+
 ## Samsung GenAI (SSO-only)
 
 Need to use Samsung's internal GenAI portal? Read Frog already ships with a disabled-by-default provider preset:

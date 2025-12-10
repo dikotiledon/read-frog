@@ -1,21 +1,22 @@
 import type { Config } from '@/types/config/config'
 import type { ProviderConfig } from '@/types/config/provider'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
+
 import { i18n } from '#imports'
 import { Readability } from '@mozilla/readability'
 import { LANG_CODE_TO_EN_NAME, LANG_CODE_TO_LOCALE_NAME } from '@read-frog/definitions'
-import { providerRequiresAPIKey } from '@/types/config/provider'
 import { franc } from 'franc-min'
 import { toast } from 'sonner'
-import { isAPIProviderConfig, isGenAIProviderConfig, isLLMTranslateProviderConfig } from '@/types/config/provider'
+import { isAPIProviderConfig, isGenAIProviderConfig, isLLMTranslateProviderConfig, providerRequiresAPIKey } from '@/types/config/provider'
 import { getProviderConfigById } from '@/utils/config/helpers'
 import { getFinalSourceCode } from '@/utils/config/languages'
-import { removeDummyNodes } from '@/utils/content/utils'
+import { normalizeHtmlForTranslation, removeDummyNodes } from '@/utils/content/utils'
 import { logger } from '@/utils/logger'
+import { createPerfTimer } from '@/utils/perf/perf-timer'
 import { getTranslatePrompt } from '@/utils/prompts/translate'
 import { getConfigFromStorage } from '../../config/config'
 import { Sha256Hex } from '../../hash'
 import { sendMessage } from '../../message'
-import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import { getGenAIBatchController } from './core/genai-batch-controller'
 
 const MIN_LENGTH_FOR_LANG_DETECTION = 50
@@ -66,7 +67,7 @@ async function getOrFetchArticleData(
     try {
       const documentClone = document.cloneNode(true) as Document
       await removeDummyNodes(documentClone)
-      const article = new Readability(documentClone, { serializer: el => el }).parse()
+      const article = new Readability(documentClone, { serializer: (el: Element) => el }).parse()
 
       if (article?.textContent) {
         textContent = article.textContent
@@ -130,7 +131,7 @@ async function buildHashComponents(
   return hashComponents
 }
 
-type TranslateTextOptions = {
+interface TranslateTextOptions {
   chunkMetadata?: TranslationChunkMetadata
   signal?: AbortSignal
 }
@@ -140,6 +141,9 @@ export async function translateText(text: string, options?: TranslateTextOptions
   if (!config) {
     throw new Error('No global config when translate text')
   }
+  const clientRequestId = crypto.randomUUID()
+  const perf = createPerfTimer(`translate:${clientRequestId}`)
+  perf.step('init', { rawChars: text.length })
   const providerId = config.translate.providerId
   const providerConfig = getProviderConfigById(config.providersConfig, providerId)
 
@@ -158,6 +162,17 @@ export async function translateText(text: string, options?: TranslateTextOptions
     }
   }
 
+  const { text: normalizedText, stripped } = normalizeHtmlForTranslation(text)
+  perf.step('normalized', {
+    cleanedChars: normalizedText.length,
+    strippedMarkup: stripped,
+  })
+
+  if (!normalizedText) {
+    logger.info('translateText: normalized text is empty, skipping request')
+    return ''
+  }
+
   // Get article data for LLM providers first (needed for both hash and request)
   let articleTitle: string | undefined
   let articleTextContent: string | undefined
@@ -171,7 +186,7 @@ export async function translateText(text: string, options?: TranslateTextOptions
   }
 
   const hashComponents = await buildHashComponents(
-    text,
+    normalizedText,
     providerConfig,
     langConfig,
     config.translate.enableAIContentAware,
@@ -189,12 +204,12 @@ export async function translateText(text: string, options?: TranslateTextOptions
   const hash = Sha256Hex(...hashComponents)
 
   const scheduleAt = Date.now()
-  const clientRequestId = crypto.randomUUID()
+  perf.step('hash-ready', { hash })
 
   if (isGenAIProviderConfig(providerConfig) && config.translate.useGenAIBatching) {
     const controller = getGenAIBatchController()
-    return await controller.enqueue({
-      text,
+    const result = await controller.enqueue({
+      text: normalizedText,
       hash,
       langConfig,
       providerConfig,
@@ -205,10 +220,12 @@ export async function translateText(text: string, options?: TranslateTextOptions
       chunkMetadata,
       signal: options?.signal,
     })
+    perf.step('dispatched', { pathway: 'genai-batch' })
+    return result
   }
 
-  return await sendMessage('enqueueTranslateRequest', {
-    text,
+  const response = await sendMessage('enqueueTranslateRequest', {
+    text: normalizedText,
     langConfig,
     providerConfig,
     scheduleAt,
@@ -218,6 +235,8 @@ export async function translateText(text: string, options?: TranslateTextOptions
     articleTextContent,
     chunkMetadata,
   })
+  perf.step('dispatched', { pathway: 'enqueue' })
+  return response
 }
 
 export function validateTranslationConfig(config: Pick<Config, 'providersConfig' | 'translate' | 'language'>): boolean {

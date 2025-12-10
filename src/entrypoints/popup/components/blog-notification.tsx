@@ -8,9 +8,6 @@ import { WEBSITE_URL } from '@/utils/constants/url'
 import { version } from '../../../../package.json'
 
 export default function BlogNotification() {
-  if (!BLOG_UPDATES_ENABLED)
-    return null
-
   const queryClient = useQueryClient()
 
   const { data: lastViewedDate } = useQuery({
@@ -42,6 +39,9 @@ export default function BlogNotification() {
     lastViewedDate ?? null,
     latestBlogPost?.date ?? null,
   )
+
+  if (!BLOG_UPDATES_ENABLED)
+    return null
 
   return (
     <Tooltip>

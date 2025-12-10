@@ -99,8 +99,8 @@ export function TranslatePopover() {
           `No provider config for ${config.translate.providerId} when translate text`,
         )
       }
-    const { provider } = translateProviderConfig
-    const targetLangName = LANG_CODE_TO_EN_NAME[languageConfig.targetCode]
+      const { provider } = translateProviderConfig
+      const targetLangName = LANG_CODE_TO_EN_NAME[languageConfig.targetCode]
 
       setIsTranslating(true)
       cancelTranslation = undefined

@@ -1,9 +1,9 @@
 import { storage } from '#imports'
 import { semanticVersionSchema } from '@read-frog/definitions'
 import { z } from 'zod'
+import { READFROG_REMOTE_FEATURES_ENABLED } from './constants/feature-flags'
 import { logger } from './logger'
 import { sendMessage } from './message'
-import { READFROG_REMOTE_FEATURES_ENABLED } from './constants/feature-flags'
 
 const LAST_VIEWED_BLOG_DATE_KEY = 'lastViewedBlogDate'
 const ONE_DAY_MS = 24 * 60 * 60 * 1000

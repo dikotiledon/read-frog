@@ -1,4 +1,3 @@
-import { WEBSITE_URL } from '@/utils/constants/url'
 import { ApiProvidersPage } from '../pages/api-providers'
 import { ConfigPage } from '../pages/config'
 import { FloatingButtonAndToolbarPage } from '../pages/floating-button-and-toolbar'

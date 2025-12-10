@@ -1,3 +1,4 @@
+import type { GenAIProviderConfig } from '@/types/config/provider'
 import { i18n } from '#imports'
 import { useStore } from '@tanstack/react-form'
 import { useAtom, useAtomValue } from 'jotai'
@@ -5,7 +6,6 @@ import { useEffect } from 'react'
 import { Input } from '@/components/shadcn/input'
 import { Separator } from '@/components/shadcn/separator'
 import { Switch } from '@/components/shadcn/switch'
-import type { GenAIProviderConfig } from '@/types/config/provider'
 import { isAPIProviderConfig, isGenAIProviderConfig, isReadProvider, isTranslateProvider, providerRequiresAPIKey } from '@/types/config/provider'
 import { configFieldsAtomMap } from '@/utils/atoms/config'
 import { providerConfigAtom } from '@/utils/atoms/provider'
@@ -16,9 +16,9 @@ import { BaseURLField } from './base-url-field'
 import { ConfigHeader } from './config-header'
 import { DefaultReadProviderSelector, DefaultTranslateProviderSelector } from './default-provider'
 import { formOpts, useAppForm } from './form'
+import { GenAISessionActions } from './genai-session-actions'
 import { ReadModelSelector } from './read-model-selector'
 import { TranslateModelSelector } from './translate-model-selector'
-import { GenAISessionActions } from './genai-session-actions'
 
 export function ProviderConfigForm() {
   const [selectedProviderId] = useAtom(selectedProviderIdAtom)
@@ -142,7 +142,7 @@ export function ProviderConfigForm() {
                           value={Number.isFinite(field.state.value) ? field.state.value : ''}
                           onChange={(event) => {
                             const rawValue = event.currentTarget.value
-                            const numericValue = rawValue === '' ? NaN : Number(rawValue)
+                            const numericValue = rawValue === '' ? Number.NaN : Number(rawValue)
                             field.handleChange(numericValue)
                           }}
                           onBlur={(event) => {

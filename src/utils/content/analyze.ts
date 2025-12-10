@@ -9,9 +9,9 @@ import { isGenAIProviderConfig, isLLMTranslateProviderConfig } from '@/types/con
 import { getConfigFromStorage } from '../config/config'
 import { getProviderConfigById } from '../config/helpers'
 import { getProviderOptions } from '../constants/model'
+import { genaiGenerateText } from '../genai/client'
 import { logger } from '../logger'
 import { getTranslateModelById } from '../providers/model'
-import { genaiGenerateText } from '../genai/client'
 import { cleanText, removeDummyNodes } from './utils'
 
 export type DetectionSource = 'llm' | 'franc' | 'fallback'

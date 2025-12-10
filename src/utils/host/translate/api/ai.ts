@@ -2,13 +2,13 @@ import type { LLMTranslateProviderConfig } from '@/types/config/provider'
 import type { ArticleContent } from '@/types/content'
 import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import { generateText } from 'ai'
+import { isGenAIProviderConfig } from '@/types/config/provider'
 import { getProviderOptions } from '@/utils/constants/model'
+import { genaiTranslate } from '@/utils/genai/client'
 import { getTranslatePrompt } from '@/utils/prompts/translate'
 import { getTranslateModelById } from '@/utils/providers/model'
-import { isGenAIProviderConfig } from '@/types/config/provider'
-import { genaiTranslate } from '@/utils/genai/client'
 
-export type AITranslateOptions = {
+export interface AITranslateOptions {
   isBatch?: boolean
   content?: ArticleContent
   chunkMetadata?: TranslationChunkMetadata

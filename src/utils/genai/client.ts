@@ -1,15 +1,17 @@
 import type { EventSourceMessage } from 'eventsource-parser'
+import type { GenAIChatLease, GenAIChatPurpose } from './chat-pool'
 import type { GenAIProviderConfig } from '@/types/config/provider'
 import type { ArticleContent } from '@/types/content'
 import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import { createParser } from 'eventsource-parser'
+import { logGenAIReliabilityEvent } from '@/utils/genai/telemetry'
 import { logger } from '@/utils/logger'
 import { getTranslatePrompt } from '@/utils/prompts/translate'
-import { GENAI_ENDPOINTS, GENAI_MESSAGE_POLL_INTERVAL_MS, GENAI_MESSAGE_POLL_MAX_BACKOFF_MULTIPLIER, GENAI_MESSAGE_POLL_TIMEOUT_MS, GENAI_STREAM_COMPLETE_EVENTS } from './constants'
-import type { GenAIChatLease, GenAIChatPurpose } from './chat-pool'
 import { acquireGenAIChat, scaleGenAIChatPool } from './chat-pool'
-import { registerActiveGenAIRequest } from './request-registry'
+import { GENAI_ENDPOINTS, GENAI_MESSAGE_POLL_INTERVAL_MS, GENAI_MESSAGE_POLL_MAX_BACKOFF_MULTIPLIER, GENAI_MESSAGE_POLL_TIMEOUT_MS, GENAI_STREAM_COMPLETE_EVENTS } from './constants'
+import { fetchWithGenAIFallback } from './http'
 import { resolveGenAIModelGuid } from './models'
+import { registerActiveGenAIRequest } from './request-registry'
 import { ensureGenAISession } from './session'
 
 const GENAI_CHAT_MAX_RECOVERY_ATTEMPTS = 3
@@ -101,7 +103,7 @@ function chunkLooksComplete(chunk: string): boolean {
 
 async function genaiFetch(baseURL: string, path: string, init: RequestInit = {}) {
   const url = joinURL(baseURL, path)
-  const response = await fetch(url, {
+  const response = await fetchWithGenAIFallback(url, {
     credentials: 'include',
     ...init,
     headers: {
@@ -336,12 +338,12 @@ function isCompletionEvent(event: GenAIStreamEvent): boolean {
   return statusCandidates.some(status => COMPLETE_STATUS_SET.has(status))
 }
 
-type GuidParseState = {
+interface GuidParseState {
   latestGuid: string | null
   completedGuid: string | null
 }
 
-type WaitForContentOptions = {
+interface WaitForContentOptions {
   pollIntervalMs?: number
   timeoutMs?: number
   sleep?: (ms: number) => Promise<void>
@@ -350,18 +352,18 @@ type WaitForContentOptions = {
   signal?: AbortSignal
 }
 
-type MessageContentResult = {
+interface MessageContentResult {
   content: string
   completed: boolean
 }
 
-type GenAIMessageResponse = {
+interface GenAIMessageResponse {
   content?: string | null
   status?: string | null
   responseCode?: string | null
 }
 
-type ReadEventResult = {
+interface ReadEventResult {
   responseGuid: string
   fallbackContent: string | null
 }
@@ -511,7 +513,7 @@ async function readEventStream(response: Response, options?: { signal?: AbortSig
           completedGuid = fallbackGuid ?? latestGuid ?? null
       }
     },
-    onError(error) {
+    onError(error: unknown) {
       logger.warn('[GenAI] SSE parser error', error)
     },
   })
@@ -528,11 +530,12 @@ async function readEventStream(response: Response, options?: { signal?: AbortSig
       rawStreamText += text
       parser.feed(text)
 
-      if (completedGuid)
+      if (completedGuid) {
         return {
           responseGuid: completedGuid,
           fallbackContent: collectedContent.join('') || null,
         }
+      }
     }
 
     const remaining = decoder.decode()
@@ -582,12 +585,19 @@ function forwardAbortSignal(source: AbortSignal | null | undefined, targetContro
   return () => source.removeEventListener('abort', listener)
 }
 
-function createMessageResponseCanceler(baseURL: string, messageGuid: string) {
+interface MessageResponseCancelTelemetry {
+  providerConfig: GenAIProviderConfig
+  modelType: ModelType
+}
+
+function createMessageResponseCanceler(baseURL: string, messageGuid: string, telemetry?: MessageResponseCancelTelemetry) {
   let invoked = false
   return async (reason?: string) => {
     if (invoked)
       return
     invoked = true
+
+    let success = true
 
     try {
       await genaiFetch(baseURL, GENAI_ENDPOINTS.messagesResponseCancel, {
@@ -600,11 +610,29 @@ function createMessageResponseCanceler(baseURL: string, messageGuid: string) {
       })
     }
     catch (error) {
+      success = false
       logger.warn('[GenAI] Failed to cancel messages-response stream', {
         messageGuid,
         reason,
         error,
       })
+    }
+    finally {
+      if (telemetry) {
+        const model = getModelName(telemetry.providerConfig, telemetry.modelType) ?? null
+        void logGenAIReliabilityEvent({
+          type: 'messages-response-cancel',
+          providerId: telemetry.providerConfig.id,
+          modelType: telemetry.modelType,
+          model,
+          reason,
+          metadata: {
+            messageGuid,
+            success,
+          },
+          success,
+        })
+      }
     }
   }
 }
@@ -717,11 +745,12 @@ async function waitForMessageContent(
 
     const isComplete = (status && COMPLETE_STATUS_SET.has(status)) || isSuccessfulResponseCode(responseCode)
     if (isComplete) {
-      if (latestContent !== null)
+      if (latestContent !== null) {
         return {
           content: latestContent,
           completed: true,
         }
+      }
 
       if (hasFallback) {
         logger.warn('[GenAI] Using SSE fallback content due to empty response payload', {
@@ -776,7 +805,7 @@ async function waitForMessageContent(
   }
 }
 
-type WaitForMessageCompletionOptions = {
+interface WaitForMessageCompletionOptions {
   pollIntervalMs?: number
   timeoutMs?: number
   sleep?: (ms: number) => Promise<void>
@@ -833,7 +862,7 @@ async function waitForMessageCompletion(
   }
 }
 
-type GenAIExecutionOptions = {
+interface GenAIExecutionOptions {
   isBatch?: boolean
   content?: ArticleContent
   chunkMetadata?: TranslationChunkMetadata
@@ -865,7 +894,6 @@ export async function genaiTranslate(
     : null
 
   try {
-    translateChatLoop:
     for (let attempt = 0; attempt < GENAI_CHAT_MAX_RECOVERY_ATTEMPTS; attempt++) {
       const chatLease = await acquireGenAIChat(providerConfig, baseURL, 'translate', () => createChat(baseURL))
       let shouldResetChat = false
@@ -879,7 +907,7 @@ export async function genaiTranslate(
           if (!settled) {
             shouldResetChat = true
             resetReason = 'stale-pending-message'
-            continue translateChatLoop
+            continue
           }
         }
 
@@ -925,7 +953,7 @@ export async function genaiTranslate(
 
           chatLease.setPendingMessageGuid(messageGuid)
           pendingSet = true
-          cancelMessagesResponse = createMessageResponseCanceler(baseURL, messageGuid)
+          cancelMessagesResponse = createMessageResponseCanceler(baseURL, messageGuid, { providerConfig, modelType: 'translate' })
 
           const modelRef = getModelName(providerConfig, 'translate')
           const modelGuid = resolveGenAIModelGuid(modelRef)
@@ -965,8 +993,9 @@ export async function genaiTranslate(
 
             pendingMessageSettled = translationResult.completed
 
-            if (translationResult.completed)
+            if (translationResult.completed) {
               chatLease.setParentMessageGuid(assistantGuid)
+            }
             else {
               shouldResetChat = true
               resetReason = 'response-incomplete'
@@ -995,7 +1024,7 @@ export async function genaiTranslate(
         }
 
         if (shouldResetChat)
-          continue translateChatLoop
+          continue
       }
       catch (error) {
         if (shouldInvalidateChatFromHttpError(error))
@@ -1025,7 +1054,7 @@ export async function genaiTranslate(
   }
 }
 
-type GenAIGenerateOptions = {
+interface GenAIGenerateOptions {
   system?: string
   modelType?: ModelType
   clientRequestId?: string
@@ -1054,7 +1083,6 @@ export async function genaiGenerateText(
     : null
 
   try {
-    generateChatLoop:
     for (let attempt = 0; attempt < GENAI_CHAT_MAX_RECOVERY_ATTEMPTS; attempt++) {
       const chatLease = await acquireGenAIChat(providerConfig, baseURL, modelType, () => createChat(baseURL))
       let shouldResetChat = false
@@ -1068,7 +1096,7 @@ export async function genaiGenerateText(
           if (!settled) {
             shouldResetChat = true
             resetReason = 'stale-pending-message'
-            continue generateChatLoop
+            continue
           }
         }
 
@@ -1114,7 +1142,7 @@ export async function genaiGenerateText(
 
           chatLease.setPendingMessageGuid(messageGuid)
           pendingSet = true
-          cancelMessagesResponse = createMessageResponseCanceler(baseURL, messageGuid)
+          cancelMessagesResponse = createMessageResponseCanceler(baseURL, messageGuid, { providerConfig, modelType })
 
           const modelRef = getModelName(providerConfig, modelType)
           const modelGuid = resolveGenAIModelGuid(modelRef)
@@ -1139,8 +1167,9 @@ export async function genaiGenerateText(
 
           pendingMessageSettled = textResult.completed
 
-          if (textResult.completed)
+          if (textResult.completed) {
             chatLease.setParentMessageGuid(assistantGuid)
+          }
           else {
             shouldResetChat = true
             resetReason = 'response-incomplete'
@@ -1150,7 +1179,7 @@ export async function genaiGenerateText(
         }
 
         if (shouldResetChat)
-          continue generateChatLoop
+          continue
       }
       catch (error) {
         if (shouldInvalidateChatFromHttpError(error))
@@ -1200,4 +1229,3 @@ export const __private__ = {
   GenAIHttpError,
   GenAIPendingResponseError,
 }
-

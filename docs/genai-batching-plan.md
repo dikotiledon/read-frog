@@ -19,15 +19,15 @@ This document captures the design, work plan, and follow-up items for making the
 
 ## 3. High-Level Architecture Changes
 
-| Area | Changes |
-| --- | --- |
-| Content script | Introduce a `GenAIBatchController` that buffers translation targets, assigns chunk IDs, and resolves per-node promises when batched responses arrive. |
-| Prompt generation | Extend `getTranslatePrompt` with a chunked mode that emits `<chunk id="n">` blocks and instructions for mirrored output; reuse `BATCH_SEPARATOR` only for legacy providers. |
-| Messaging | Add a dedicated message (e.g., `enqueueGenAIBatch`) that carries an array of chunk payloads plus contextual metadata (article title/summary, hashes, clientRequestId). |
-| Background queue | Reuse `BatchQueue` for GenAI providers, but supply pre-batched text plus a chunk map. Parse response back into `{ chunkId, translation }[]` and send to the requester. |
-| GenAI client | Allow `genaiTranslate` to accept chunk arrays, build a single prompt, wait for assistant output once, and parse `<chunk>` sections; fall back to individual translations if parsing fails. |
-| Cache | Adjust translation hash composition so identical text with the same prompt settings maps to the same cache entry even when chunk metadata differs. |
-| Telemetry | Log batch sizes, parse failures, fallbacks, and cancellations for troubleshooting. |
+| Area              | Changes                                                                                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Content script    | Introduce a `GenAIBatchController` that buffers translation targets, assigns chunk IDs, and resolves per-node promises when batched responses arrive.                                      |
+| Prompt generation | Extend `getTranslatePrompt` with a chunked mode that emits `<chunk id="n">` blocks and instructions for mirrored output; reuse `BATCH_SEPARATOR` only for legacy providers.                |
+| Messaging         | Add a dedicated message (e.g., `enqueueGenAIBatch`) that carries an array of chunk payloads plus contextual metadata (article title/summary, hashes, clientRequestId).                     |
+| Background queue  | Reuse `BatchQueue` for GenAI providers, but supply pre-batched text plus a chunk map. Parse response back into `{ chunkId, translation }[]` and send to the requester.                     |
+| GenAI client      | Allow `genaiTranslate` to accept chunk arrays, build a single prompt, wait for assistant output once, and parse `<chunk>` sections; fall back to individual translations if parsing fails. |
+| Cache             | Adjust translation hash composition so identical text with the same prompt settings maps to the same cache entry even when chunk metadata differs.                                         |
+| Telemetry         | Log batch sizes, parse failures, fallbacks, and cancellations for troubleshooting.                                                                                                         |
 
 ## 4. Detailed Work Plan
 
@@ -139,7 +139,8 @@ interface GenAIChunkResult {
 - ✅ Batch controller now listens to wrapper abort signals, exposes `cancelChunk`, and logs flush/cancel telemetry (chunk counts, flush reasons, cancellation totals).
 - ✅ Recoverable-error handling implemented: batch attempts retry once (R50004, mismatches, unexpected tokens) before falling back to per-chunk GenAI requests while reusing cache hits.
 - ✅ `/messages-response` cancel helper implemented: new endpoint call fires whenever SSE is aborted (user toggle, GenAI errors) so the server stops streaming immediately.
-- 🔄 Remaining: richer retry/cancel telemetry (bucketed by response code) plus QA sign-off before broad rollout.
+- ✅ Reliability telemetry persisted: new `genaiReliabilityLog` Dexie table records retry attempts, response codes, fallback durations, and SSE cancel reasons for later analysis.
+- 🔄 Remaining: manual QA sign-off before broad rollout.
 
 ## 9. Known Issues & Error Handling
 
@@ -157,9 +158,8 @@ interface GenAIChunkResult {
 1. **Manual validation & QA**
    - Run end-to-end tests on representative pages (Google home, long articles) to verify separators, caching, translation modes, retries, and cancellation UX.
    - Document any anomalies (e.g., misordered output, leftover spinners) before enabling the feature flag by default.
-2. **Telemetry polish & rollout prep**
-   - Emit structured telemetry for retry outcomes (response code, retries attempted, fallback duration, cancel reason) to validate reliability gains post-release.
-   - Wire those counters into dashboards before turning the flag on for all users.
+2. **Dashboard integration (optional)**
+   - Surface the new `genaiReliabilityLog` metrics inside the Statistics page or exported telemetry dashboards so trends are visible during rollout.
 
 ## 11. `/messages-response` Cancellation Plan
 

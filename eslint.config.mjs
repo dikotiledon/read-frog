@@ -22,6 +22,7 @@ export default antfu({
   },
   ignores: [
     'lib/**',
+    'scrap/**',
   ],
   rules: {
     'unused-imports/no-unused-imports': 'error',

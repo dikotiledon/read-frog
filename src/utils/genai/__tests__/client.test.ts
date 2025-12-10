@@ -24,18 +24,20 @@ function createSSEStream(data: string) {
 const baseURL = 'https://example.com'
 const guid = 'response-guid'
 
-const createJsonResponse = (body: unknown) =>
-  new Response(JSON.stringify(body), {
+function createJsonResponse(body: unknown) {
+  return new Response(JSON.stringify(body), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   })
+}
 
-const createNotFoundResponse = () =>
-  new Response(JSON.stringify({ message: 'not found' }), {
+function createNotFoundResponse() {
+  return new Response(JSON.stringify({ message: 'not found' }), {
     status: 404,
     statusText: 'Not Found',
     headers: { 'Content-Type': 'application/json' },
   })
+}
 
 describe('readEventStream', () => {
   it('handles CRLF-delimited SSE chunks', async () => {

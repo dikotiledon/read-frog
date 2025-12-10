@@ -1,6 +1,6 @@
 import type { GenAIProviderConfig } from '@/types/config/provider'
-import { logger } from '@/utils/logger'
 import { storage } from '#imports'
+import { logger } from '@/utils/logger'
 import { GENAI_CHAT_IDLE_TTL_MS, GENAI_CHAT_MAX_SLOTS_PER_KEY } from './constants'
 
 export type GenAIChatPurpose = 'translate' | 'read'
@@ -45,7 +45,7 @@ class Mutex {
   }
 }
 
-type PersistedChatSlot = {
+interface PersistedChatSlot {
   slotId: string
   chatGuid: string
   lastMessageGuid: string | null
@@ -54,7 +54,7 @@ type PersistedChatSlot = {
   pendingSince: number | null
 }
 
-type PersistedPoolEntry = {
+interface PersistedPoolEntry {
   slots: PersistedChatSlot[]
 }
 
@@ -352,7 +352,6 @@ async function reserveSlot(
   mutex: Mutex,
   createChat: () => Promise<string>,
 ): Promise<ChatSlot> {
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     await mutex.acquire()
     entry.createChatFactory = createChat

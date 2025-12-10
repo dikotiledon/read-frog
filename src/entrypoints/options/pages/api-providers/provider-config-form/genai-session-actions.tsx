@@ -1,5 +1,5 @@
 import type { GenAIProviderConfig } from '@/types/config/provider'
-import { i18n, browser } from '#imports'
+import { browser, i18n } from '#imports'
 import { IconExternalLink } from '@tabler/icons-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -46,18 +46,18 @@ export function GenAISessionActions({ providerConfig }: { providerConfig: GenAIP
       await browser.tabs.create({ url: baseURL, active: true })
     }
     catch (error) {
-  toast.error(error instanceof Error ? error.message : i18n.t('options.apiProviders.genaiSession.openFailed'))
+      toast.error(error instanceof Error ? error.message : i18n.t('options.apiProviders.genaiSession.openFailed'))
     }
   }
 
   const statusText = lastCheckedAt
-  ? i18n.t('options.apiProviders.genaiSession.lastChecked', [formatTimestamp(lastCheckedAt)])
-  : i18n.t('options.apiProviders.genaiSession.notChecked')
+    ? i18n.t('options.apiProviders.genaiSession.lastChecked', [formatTimestamp(lastCheckedAt)])
+    : i18n.t('options.apiProviders.genaiSession.notChecked')
 
   return (
     <div className="rounded-lg border border-dashed border-muted-foreground/40 bg-muted/40 p-3">
       <div className="flex flex-col gap-1 text-sm font-medium">
-  <span>{i18n.t('options.apiProviders.genaiSession.title')}</span>
+        <span>{i18n.t('options.apiProviders.genaiSession.title')}</span>
         <p className="text-xs text-muted-foreground">
           {i18n.t('options.apiProviders.genaiSession.description')}
         </p>

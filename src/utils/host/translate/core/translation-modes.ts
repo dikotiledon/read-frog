@@ -12,6 +12,7 @@ import { isBlockTransNode, isHTMLElement, isTextNode, isTransNode } from '../../
 import { unwrapDeepestOnlyHTMLChild } from '../../dom/find'
 import { getOwnerDocument } from '../../dom/node'
 import { extractTextContent } from '../../dom/traversal'
+import { nextChunkMetadata } from '../chunk-registry'
 import { removeTranslatedWrapperWithRestore } from '../dom/translation-cleanup'
 import { insertTranslatedNodeIntoWrapper } from '../dom/translation-insertion'
 import { findPreviousTranslatedWrapperInside } from '../dom/translation-wrapper'
@@ -19,13 +20,12 @@ import { setTranslationDirAndLang } from '../translation-attributes'
 import { createSpinnerInside, getTranslatedTextAndRemoveSpinner } from '../ui/spinner'
 import { isNumericContent } from '../ui/translation-utils'
 import {
-  MARK_ATTRIBUTES_REGEX,
   clearTranslationAbortController,
+  MARK_ATTRIBUTES_REGEX,
   originalContentMap,
   registerTranslationAbortController,
   translatingNodes,
 } from './translation-state'
-import { nextChunkMetadata } from '../chunk-registry'
 
 const MAX_TRANSLATION_RETRIES = 2
 const translationRetryCounts = new WeakMap<Node, number>()
@@ -268,6 +268,12 @@ export async function translateNodeTranslationOnlyMode(
     if (!innerTextContent.trim() || isNumericContent(innerTextContent))
       return
 
+    // Only save originalContent when there's no existing translation wrapper
+    const hasExistingWrapperInParent = parentNode.querySelector(`.${CONTENT_WRAPPER_CLASS}`)
+    if (!originalContentMap.has(parentNode) && !hasExistingWrapperInParent) {
+      originalContentMap.set(parentNode, parentNode.innerHTML)
+    }
+
     const cleanTextContent = (content: string): string => {
       if (!content)
         return content
@@ -279,20 +285,7 @@ export async function translateNodeTranslationOnlyMode(
       return cleanedContent
     }
 
-    // Only save originalContent when there's no existing translation wrapper
-    const hasExistingWrapperInParent = parentNode.querySelector(`.${CONTENT_WRAPPER_CLASS}`)
-    if (!originalContentMap.has(parentNode) && !hasExistingWrapperInParent) {
-      originalContentMap.set(parentNode, parentNode.innerHTML)
-    }
-
-    const getStringFormatFromNode = (node: Element | Text) => {
-      if (isTextNode(node)) {
-        return node.textContent
-      }
-      return node.outerHTML
-    }
-
-    const textContent = cleanTextContent(transNodes.map(getStringFormatFromNode).join(''))
+    const textContent = cleanTextContent(innerTextContent)
     if (!textContent)
       return
 

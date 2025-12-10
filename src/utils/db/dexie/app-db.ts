@@ -4,6 +4,7 @@ import Dexie from 'dexie'
 import { APP_NAME } from '@/utils/constants/app'
 import ArticleSummaryCache from './tables/article-summary-cache'
 import BatchRequestRecord from './tables/batch-request-record'
+import GenAIReliabilityLog from './tables/genai-reliability-log'
 import TranslationCache from './tables/translation-cache'
 
 export default class AppDB extends Dexie {
@@ -19,6 +20,11 @@ export default class AppDB extends Dexie {
 
   articleSummaryCache!: EntityTable<
     ArticleSummaryCache,
+    'key'
+  >
+
+  genaiReliabilityLog!: EntityTable<
+    GenAIReliabilityLog,
     'key'
   >
 
@@ -57,8 +63,30 @@ export default class AppDB extends Dexie {
         key,
         createdAt`,
     })
+    this.version(4).stores({
+      translationCache: `
+        key,
+        translation,
+        createdAt`,
+      batchRequestRecord: `
+        key,
+        createdAt,
+        originalRequestCount,
+        provider,
+        model`,
+      articleSummaryCache: `
+        key,
+        createdAt`,
+      genaiReliabilityLog: `
+        key,
+        createdAt,
+        eventType,
+        providerId,
+        responseCode`,
+    })
     this.translationCache.mapToClass(TranslationCache)
     this.batchRequestRecord.mapToClass(BatchRequestRecord)
     this.articleSummaryCache.mapToClass(ArticleSummaryCache)
+    this.genaiReliabilityLog.mapToClass(GenAIReliabilityLog)
   }
 }
