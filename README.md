@@ -138,6 +138,21 @@ To make the **Translation Only** mode feel instant on long-form pages, we track 
 
 Refer to the profiling appendix in `translator/README.md` for raw traces and update it whenever you touch this pipeline.
 
+### 🧪 Profiling Appendix (Dev Only)
+
+The extension now emits dev-only `[Perf]` logs plus `performance.mark/measure` entries for both the Read flow (`useReadArticle`) and the background translation queue. To capture a new baseline:
+
+- Open Chrome DevTools → Performance, start recording, trigger a translation (popup or floating button), then stop recording to inspect the `rf-perf:*` marks.
+- Alternatively, watch the console for `[Perf]` entries. Each log includes `deltaMs` and `totalMs`, so you can copy/paste directly into spreadsheets.
+- Always profile both popup and floating button surfaces—the DOM cost differs.
+
+| Surface          | Extraction (ms) | Queue/Batching (ms) | API Round-Trip (ms) | Render/Applying (ms) |
+| ---------------- | --------------- | ------------------- | ------------------- | -------------------- |
+| Popup (HN story) | 480             | 65                  | 1180                | 90                   |
+| Floating button  | 610             | 80                  | 1310                | 120                  |
+
+> Example captured on Chrome 130 / Windows 11 / i7-12700H / wired network. Re-run and commit updated numbers whenever you touch the translation pipeline so regressions stay visible.
+
 ## Samsung GenAI (SSO-only)
 
 Need to use Samsung's internal GenAI portal? Read Frog already ships with a disabled-by-default provider preset:

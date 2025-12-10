@@ -1,12 +1,14 @@
 import type { Config } from '@/types/config/config'
 import type { GenAIProviderConfig, LLMTranslateProviderConfig, ProviderConfig, TranslateProviderTypes } from '@/types/config/provider'
+import type { RequestQueueConfig, TranslationMode } from '@/types/config/translate'
 import type { ArticleContent } from '@/types/content'
 import type { TranslationChunkMetadata } from '@/types/translation-chunk'
+import type { QueueOptions } from '@/utils/request/request-queue'
 
 import { browser } from '#imports'
 import { isGenAIProviderConfig, isLLMTranslateProviderConfig } from '@/types/config/provider'
 import { putBatchRequestRecord } from '@/utils/batch-request-record'
-import { DEFAULT_CONFIG } from '@/utils/constants/config'
+import { CONFIG_STORAGE_KEY, DEFAULT_CONFIG } from '@/utils/constants/config'
 import { BATCH_SEPARATOR } from '@/utils/constants/prompt'
 import { TRANSLATE_PROVIDER_CHARACTER_LIMITS } from '@/utils/constants/providers'
 import { MIN_BATCH_CHARACTERS } from '@/utils/constants/translate'
@@ -26,6 +28,55 @@ import { BatchQueue } from '@/utils/request/batch-queue'
 import { RequestQueue } from '@/utils/request/request-queue'
 
 import { ensureInitializedConfig } from './config'
+
+const TRANSLATION_ONLY_QUEUE_PROFILE: QueueOptions = {
+  rate: 4,
+  capacity: 16,
+  timeoutMs: 30_000,
+  maxRetries: 3,
+  baseRetryDelayMs: 400,
+}
+
+let currentTranslateMode: TranslationMode = DEFAULT_CONFIG.translate.mode
+let baseRequestQueueConfig: RequestQueueConfig = DEFAULT_CONFIG.translate.requestQueueConfig
+let hasRegisteredConfigListener = false
+
+function buildQueueOptions(config: RequestQueueConfig, mode: TranslationMode): QueueOptions {
+  if (mode !== 'translationOnly')
+    return { ...config }
+
+  return {
+    rate: Math.min(config.rate, TRANSLATION_ONLY_QUEUE_PROFILE.rate),
+    capacity: Math.min(config.capacity, TRANSLATION_ONLY_QUEUE_PROFILE.capacity),
+    timeoutMs: Math.min(config.timeoutMs, TRANSLATION_ONLY_QUEUE_PROFILE.timeoutMs),
+    maxRetries: Math.min(config.maxRetries, TRANSLATION_ONLY_QUEUE_PROFILE.maxRetries),
+    baseRetryDelayMs: Math.min(config.baseRetryDelayMs, TRANSLATION_ONLY_QUEUE_PROFILE.baseRetryDelayMs),
+  }
+}
+
+function registerConfigChangeListener(
+  requestQueue: RequestQueue,
+  batchQueue: BatchQueue<TranslateBatchData, string>,
+) {
+  if (hasRegisteredConfigListener)
+    return
+
+  browser.storage.onChanged.addListener((changes: Record<string, browser.storage.StorageChange>, areaName: browser.storage.AreaName) => {
+    if (areaName !== 'local')
+      return
+    const updated = changes[CONFIG_STORAGE_KEY]
+    if (!updated?.newValue)
+      return
+    const nextConfig = updated.newValue as Config
+    currentTranslateMode = nextConfig.translate.mode
+    baseRequestQueueConfig = nextConfig.translate.requestQueueConfig
+    const nextQueueOptions = buildQueueOptions(baseRequestQueueConfig, currentTranslateMode)
+    requestQueue.setQueueOptions(nextQueueOptions)
+    batchQueue.setBatchConfig(nextConfig.translate.batchQueueConfig)
+  })
+
+  hasRegisteredConfigListener = true
+}
 
 export function parseBatchResult(result: string): string[] {
   return result.split(BATCH_SEPARATOR).map(t => t.trim())
@@ -183,26 +234,17 @@ function resolveProviderBatchLimit(
 
 export async function setUpRequestQueue() {
   const config = await ensureInitializedConfig()
+  const effectiveConfig = config ?? DEFAULT_CONFIG
+  currentTranslateMode = effectiveConfig.translate.mode
+  baseRequestQueueConfig = effectiveConfig.translate.requestQueueConfig
+  const queueOptions = buildQueueOptions(baseRequestQueueConfig, currentTranslateMode)
   const {
     translate: {
-      requestQueueConfig: {
-        rate,
-        capacity,
-        timeoutMs,
-        maxRetries,
-        baseRetryDelayMs,
-      },
       batchQueueConfig: { maxCharactersPerBatch, maxItemsPerBatch },
     },
-  } = config ?? DEFAULT_CONFIG
+  } = effectiveConfig
 
-  const requestQueue = new RequestQueue({
-    rate,
-    capacity,
-    timeoutMs,
-    maxRetries,
-    baseRetryDelayMs,
-  })
+  const requestQueue = new RequestQueue(queueOptions)
 
   const enqueueLLMRequest = async (data: TranslateBatchData) => {
     const { text, langConfig, providerConfig, hash, scheduleAt, content, chunkMetadata, clientRequestId } = data
@@ -333,6 +375,8 @@ export async function setUpRequestQueue() {
     },
   })
 
+  registerConfigChangeListener(requestQueue, batchQueue)
+
   if (!hasRegisteredTabRemovalListener) {
     browser.tabs.onRemoved.addListener((tabId: number) => {
       const requestIds = tabToClientRequestIds.get(tabId)
@@ -353,7 +397,7 @@ export async function setUpRequestQueue() {
     const { data: { text, langConfig, providerConfig, scheduleAt, hash, articleTitle, articleTextContent, clientRequestId, chunkMetadata } } = message
     const tabId = message.sender.tab?.id
     const perf = createPerfTimer(`queue:${clientRequestId}`)
-    perf.step('received', {
+    perf.step('queue:received', {
       chars: text.length,
       providerId: providerConfig.provider,
     })
@@ -365,7 +409,7 @@ export async function setUpRequestQueue() {
       if (hash) {
         const cached = await db.translationCache.get(hash)
         if (cached) {
-          perf.step('cache-hit', { hash })
+          perf.step('cache:hit', { hash })
           return cached.translation
         }
       }
@@ -416,7 +460,7 @@ export async function setUpRequestQueue() {
         })
       }
 
-      perf.step('completed', {
+      perf.step('api:completed', {
         hash,
         providerId: providerConfig.provider,
         cached: false,
@@ -425,7 +469,7 @@ export async function setUpRequestQueue() {
     }
     finally {
       releaseClientRequest(clientRequestId)
-      perf.step('released')
+      perf.step('queue:released')
     }
   })
 
@@ -621,7 +665,12 @@ export async function setUpRequestQueue() {
 
   onMessage('setTranslateRequestQueueConfig', (message: any) => {
     const { data } = message
-    requestQueue.setQueueOptions(data)
+    baseRequestQueueConfig = {
+      ...baseRequestQueueConfig,
+      ...data,
+    } as RequestQueueConfig
+    const nextOptions = buildQueueOptions(baseRequestQueueConfig, currentTranslateMode)
+    requestQueue.setQueueOptions(nextOptions)
   })
 
   onMessage('setTranslateBatchQueueConfig', (message: any) => {

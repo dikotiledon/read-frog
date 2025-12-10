@@ -42,13 +42,37 @@ function stripTagsFallback(html: string): string {
   return decodeBasicEntities(withoutTags)
 }
 
-const CSS_RULE_REGEX = /(?:^|\s)(?:[#.]?[\w-]+|@media|@supports|@font-face|@keyframes)[^{]+\{[^}]*\}/g
-
 function stripLikelyCss(raw: string): { text: string, stripped: boolean } {
-  const withoutRules = raw.replace(CSS_RULE_REGEX, ' ')
+  if (!/[{}]/.test(raw) || !raw.includes(':'))
+    return { text: raw, stripped: false }
+
+  let depth = 0
+  let stripped = false
+  let result = ''
+
+  for (const char of raw) {
+    if (char === '{') {
+      depth = Math.max(0, depth + 1)
+      stripped = true
+      continue
+    }
+
+    if (char === '}') {
+      if (depth > 0)
+        depth -= 1
+      stripped = true
+      continue
+    }
+
+    if (depth === 0)
+      result += char
+    else
+      stripped = true
+  }
+
   return {
-    text: withoutRules,
-    stripped: withoutRules !== raw,
+    text: result,
+    stripped,
   }
 }
 

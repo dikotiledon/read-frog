@@ -19,6 +19,7 @@ import { getProviderConfigById } from '@/utils/config/helpers'
 import { getFinalSourceCode } from '@/utils/config/languages'
 import { genaiGenerateText } from '@/utils/genai/client'
 import { logger } from '@/utils/logger'
+import { createPerfTimer } from '@/utils/perf/perf-timer'
 import { getAnalyzePrompt } from '@/utils/prompts/analyze'
 import { getExplainPrompt } from '@/utils/prompts/explain'
 import { getReadModelById } from '@/utils/providers/model'
@@ -30,6 +31,8 @@ interface ExplainArticleParams {
 
 const MAX_ATTEMPTS = 3
 const MAX_CHARACTERS = 1000
+const TARGET_MIN_CHARS = 400
+const TARGET_MAX_CHARS = 600
 
 function extractJsonPayload(text: string) {
   const trimmed = text.trim()
@@ -181,6 +184,59 @@ async function explainBatch(batch: string[], articleAnalysis: ArticleAnalysis, c
   throw lastError
 }
 
+function buildExplainParagraphBatches(paragraphs: string[]): string[][] {
+  const normalized = paragraphs.filter(paragraph => paragraph.trim().length)
+  const batches: string[][] = []
+  let current: string[] = []
+  let currentChars = 0
+
+  const pushCurrent = () => {
+    if (!current.length)
+      return
+    batches.push(current)
+    current = []
+    currentChars = 0
+  }
+
+  for (const paragraph of normalized) {
+    const paraLength = paragraph.length
+    const exceedsHardLimit = currentChars && currentChars + paraLength > MAX_CHARACTERS
+
+    if (exceedsHardLimit)
+      pushCurrent()
+
+    current.push(paragraph)
+    currentChars += paraLength
+
+    if (currentChars >= TARGET_MAX_CHARS)
+      pushCurrent()
+  }
+
+  pushCurrent()
+
+  if (!batches.length)
+    return []
+
+  const merged: string[][] = []
+
+  for (const batch of batches) {
+    const batchChars = batch.reduce((sum, paragraph) => sum + paragraph.length, 0)
+
+    if (
+      batchChars < TARGET_MIN_CHARS
+      && merged.length
+      && merged[merged.length - 1].reduce((sum, paragraph) => sum + paragraph.length, 0) + batchChars <= MAX_CHARACTERS
+    ) {
+      merged[merged.length - 1] = [...merged[merged.length - 1], ...batch]
+    }
+    else {
+      merged.push(batch)
+    }
+  }
+
+  return merged
+}
+
 export function useExplainArticle() {
   const setReadState = useSetAtom(readStateAtom)
   const config = useAtomValue(configAtom)
@@ -192,34 +248,8 @@ export function useExplainArticle() {
         throw new Error('No content or summary available for explanation generation')
       }
       setReadState('explaining')
-      // Process paragraphs in batches of 3
       const paragraphs = extractedContent.paragraphs
-      const batches = []
-
-      // if cur > 1200 or prev + cur > 1200, then push prev to batches, clear prev
-      // if cur > 1200, push the cur to batches
-      // else push cur to prev
-      // last push prev to batches
-
-      let prevParagraphs: string[] = []
-      let prevParagraphsLength = 0
-      for (let i = 0; i < paragraphs.length; i++) {
-        if (prevParagraphsLength + paragraphs[i].length > MAX_CHARACTERS) {
-          batches.push(prevParagraphs)
-          prevParagraphs = []
-          prevParagraphsLength = 0
-        }
-        if (paragraphs[i].length > MAX_CHARACTERS) {
-          batches.push([paragraphs[i]])
-        }
-        else {
-          prevParagraphs.push(paragraphs[i])
-          prevParagraphsLength += paragraphs[i].length
-        }
-      }
-      if (prevParagraphs.length > 0) {
-        batches.push(prevParagraphs)
-      }
+      const batches = buildExplainParagraphBatches(paragraphs)
 
       store.set(progressAtom, {
         completed: 0,
@@ -259,6 +289,8 @@ export function useReadArticle() {
       toast.error(i18n.t('noAPIKeyConfig.warning'))
       return
     }
+    const perf = createPerfTimer('read-article')
+    perf.step('start')
     // Reset explainArticle data before starting a new read operation
     explainArticle.reset()
 
@@ -266,6 +298,7 @@ export function useReadArticle() {
     queryClient.getMutationCache().clear()
 
     setReadState('extracting')
+    perf.step('extract:queued')
 
     try {
       // Re-trigger extract query and wait for the result
@@ -280,15 +313,27 @@ export function useReadArticle() {
       }
 
       logger.log('freshExtractedContent', freshData)
+      perf.step('extract:complete', { paragraphCount: freshData.paragraphs.length })
 
       const articleAnalysis = await analyzeContent.mutateAsync(freshData)
+      perf.step('analysis:complete', {
+        article: articleAnalysis.isArticle,
+        summaryChars: articleAnalysis.summary?.length ?? 0,
+      })
       setReadState('continue?')
       if (articleAnalysis.isArticle) {
-        await explainArticle.mutateAsync({
+        const explainedParagraphs = await explainArticle.mutateAsync({
           extractedContent: freshData,
           articleAnalysis,
         })
+        perf.step('explain:complete', {
+          segments: explainedParagraphs.length,
+        })
       }
+      else {
+        perf.step('explain:skipped', { reason: 'not-article' })
+      }
+      perf.step('render:ready')
     }
     catch (error) {
       logger.error('Error during content extraction or analysis', error)

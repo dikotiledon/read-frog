@@ -173,6 +173,15 @@ export async function translateText(text: string, options?: TranslateTextOptions
     return ''
   }
 
+  const enrichedChunkMetadata = options?.chunkMetadata
+    ? {
+        ...options.chunkMetadata,
+        rawChars: text.length,
+        cleanChars: normalizedText.length,
+        strippedMarkup: stripped,
+      }
+    : undefined
+
   // Get article data for LLM providers first (needed for both hash and request)
   let articleTitle: string | undefined
   let articleTextContent: string | undefined
@@ -193,7 +202,7 @@ export async function translateText(text: string, options?: TranslateTextOptions
     { title: articleTitle, textContent: articleTextContent },
   )
 
-  const chunkMetadata = options?.chunkMetadata
+  const chunkMetadata = enrichedChunkMetadata
   if (chunkMetadata?.groupId)
     hashComponents.push(`chunkGroup:${chunkMetadata.groupId}`)
   if (typeof chunkMetadata?.index === 'number')
@@ -204,7 +213,7 @@ export async function translateText(text: string, options?: TranslateTextOptions
   const hash = Sha256Hex(...hashComponents)
 
   const scheduleAt = Date.now()
-  perf.step('hash-ready', { hash })
+  perf.step('queue:hash-ready', { hash })
 
   if (isGenAIProviderConfig(providerConfig) && config.translate.useGenAIBatching) {
     const controller = getGenAIBatchController()
@@ -220,7 +229,7 @@ export async function translateText(text: string, options?: TranslateTextOptions
       chunkMetadata,
       signal: options?.signal,
     })
-    perf.step('dispatched', { pathway: 'genai-batch' })
+    perf.step('api:dispatched', { pathway: 'genai-batch' })
     return result
   }
 
@@ -235,7 +244,7 @@ export async function translateText(text: string, options?: TranslateTextOptions
     articleTextContent,
     chunkMetadata,
   })
-  perf.step('dispatched', { pathway: 'enqueue' })
+  perf.step('api:dispatched', { pathway: 'enqueue' })
   return response
 }
 
