@@ -140,7 +140,13 @@ Refer to the profiling appendix in `translator/README.md` for raw traces and upd
 
 ### 🧪 Profiling Appendix (Dev Only)
 
-The extension now emits dev-only `[Perf]` logs plus `performance.mark/measure` entries for both the Read flow (`useReadArticle`) and the background translation queue. To capture a new baseline:
+The extension now emits dev-only `[Perf]` logs plus `performance.mark/measure` entries for both the Read flow (`useReadArticle`) and the background translation queue. When you run the extension via `pnpm dev`, the popup also surfaces a **Perf Lab** card (dev-only, described in [`docs/perf-roadmap.md`](./docs/perf-roadmap.md)) that:
+
+- Streams live samples from Dexie for the active tab + translation mode, showing avg/p95 deltas, stage breakdowns, and the latest pulses.
+- Lets QA clear samples (Reset) before a run and export JSON bundles that can be attached to bugs or shared in chat.
+- Updates automatically every few seconds, so you can keep it open while iterating on Translation Only tweaks.
+
+To capture a new baseline:
 
 - Open Chrome DevTools → Performance, start recording, trigger a translation (popup or floating button), then stop recording to inspect the `rf-perf:*` marks.
 - Alternatively, watch the console for `[Perf]` entries. Each log includes `deltaMs` and `totalMs`, so you can copy/paste directly into spreadsheets.

@@ -1,6 +1,8 @@
+import type { PreparedChunkText } from '../chunk-normalizer'
 import type { Config } from '@/types/config/config'
 import type { TranslationMode } from '@/types/config/translate'
 import type { TransNode } from '@/types/dom'
+import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import {
   CONTENT_WRAPPER_CLASS,
   NOTRANSLATE_CLASS,
@@ -12,6 +14,7 @@ import { isBlockTransNode, isHTMLElement, isTextNode, isTransNode } from '../../
 import { unwrapDeepestOnlyHTMLChild } from '../../dom/find'
 import { getOwnerDocument } from '../../dom/node'
 import { extractTextContent } from '../../dom/traversal'
+import { prepareChunkText } from '../chunk-normalizer'
 import { nextChunkMetadata } from '../chunk-registry'
 import { removeTranslatedWrapperWithRestore } from '../dom/translation-cleanup'
 import { insertTranslatedNodeIntoWrapper } from '../dom/translation-insertion'
@@ -41,6 +44,21 @@ function shouldRetryTarget(node: Node): boolean {
 
 function resetRetryCount(node: Node) {
   translationRetryCounts.delete(node)
+}
+
+function enrichChunkMetadata(
+  metadata: TranslationChunkMetadata | undefined,
+  chunk: PreparedChunkText,
+): TranslationChunkMetadata | undefined {
+  if (!metadata)
+    return undefined
+
+  return {
+    ...metadata,
+    rawChars: chunk.rawChars,
+    cleanChars: chunk.cleanChars,
+    strippedMarkup: chunk.strippedMarkup,
+  }
 }
 
 export async function translateNodes(
@@ -95,8 +113,13 @@ export async function translateNodesBilingualMode(
       }
     }
 
-    const textContent = transNodes.map(node => extractTextContent(node, config)).join(' ').trim()
+    const rawTextContent = transNodes.map(node => extractTextContent(node, config)).join(' ')
+    const textContent = rawTextContent.trim()
     if (!textContent || isNumericContent(textContent))
+      return
+
+    const chunkText = prepareChunkText(textContent)
+    if (!chunkText.normalizedText)
       return
 
     const ownerDoc = getOwnerDocument(targetNode)
@@ -125,10 +148,10 @@ export async function translateNodesBilingualMode(
 
     let realTranslatedText: string | undefined
     try {
-      const chunkMetadata = nextChunkMetadata(walkId)
+      const chunkMetadata = enrichChunkMetadata(nextChunkMetadata(walkId), chunkText)
       realTranslatedText = await getTranslatedTextAndRemoveSpinner(
         nodes,
-        textContent,
+        chunkText,
         spinner,
         translatedWrapperNode,
         abortController.signal,
@@ -152,7 +175,7 @@ export async function translateNodesBilingualMode(
       return
     }
 
-    const translatedText = realTranslatedText === textContent ? '' : realTranslatedText
+    const translatedText = realTranslatedText === chunkText.rawText ? '' : realTranslatedText
 
     if (!translatedText) {
       // Only remove wrapper if translation returned empty (not needed),
@@ -265,7 +288,8 @@ export async function translateNodeTranslationOnlyMode(
     }
 
     const innerTextContent = transNodes.map(node => extractTextContent(node, config)).join(' ')
-    if (!innerTextContent.trim() || isNumericContent(innerTextContent))
+    const trimmedInnerTextContent = innerTextContent.trim()
+    if (!trimmedInnerTextContent || isNumericContent(trimmedInnerTextContent))
       return
 
     // Only save originalContent when there's no existing translation wrapper
@@ -287,6 +311,10 @@ export async function translateNodeTranslationOnlyMode(
 
     const textContent = cleanTextContent(innerTextContent)
     if (!textContent)
+      return
+
+    const chunkText = prepareChunkText(textContent)
+    if (!chunkText.normalizedText)
       return
 
     const ownerDoc = getOwnerDocument(targetNode)
@@ -316,10 +344,10 @@ export async function translateNodeTranslationOnlyMode(
 
     let translatedText: string | undefined
     try {
-      const chunkMetadata = nextChunkMetadata(walkId)
+      const chunkMetadata = enrichChunkMetadata(nextChunkMetadata(walkId), chunkText)
       translatedText = await getTranslatedTextAndRemoveSpinner(
         nodes,
-        textContent,
+        chunkText,
         spinner,
         translatedWrapperNode,
         abortController.signal,

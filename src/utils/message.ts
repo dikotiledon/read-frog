@@ -1,9 +1,10 @@
 import type { LangCodeISO6393 } from '@read-frog/definitions'
 import type { Config } from '@/types/config/config'
 import type { ProviderConfig } from '@/types/config/provider'
-import type { BatchQueueConfig, RequestQueueConfig } from '@/types/config/translate'
+import type { BatchQueueConfig, RequestQueueConfig, TranslationMode } from '@/types/config/translate'
+import type { PerfSampleDTO, PerfSampleMessage } from '@/types/perf'
 import type { ProxyRequest, ProxyResponse } from '@/types/proxy-fetch'
-import type { TranslationChunkMetadata } from '@/types/translation-chunk'
+import type { ChunkMetricSummaryDTO, TranslationChunkMetadata } from '@/types/translation-chunk'
 import { defineExtensionMessaging } from '@webext-core/messaging'
 
 interface ProtocolMap {
@@ -57,6 +58,10 @@ interface ProtocolMap {
   }) => Promise<string[]>
   setTranslateRequestQueueConfig: (data: Partial<RequestQueueConfig>) => void
   setTranslateBatchQueueConfig: (data: Partial<BatchQueueConfig>) => void
+  recordPerfSample: (data: PerfSampleMessage) => void
+  listPerfSamples: (data: { limit?: number }) => Promise<PerfSampleDTO[]>
+  getChunkMetricsSummary: (data: { limit?: number, hostname?: string | null, mode?: TranslationMode | 'all' }) => Promise<ChunkMetricSummaryDTO>
+  clearPerfSamples: () => Promise<void>
   // network proxy
   backgroundFetch: (data: ProxyRequest) => Promise<ProxyResponse>
   // cache management

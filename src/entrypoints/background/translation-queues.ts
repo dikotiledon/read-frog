@@ -2,7 +2,12 @@ import type { Config } from '@/types/config/config'
 import type { GenAIProviderConfig, LLMTranslateProviderConfig, ProviderConfig, TranslateProviderTypes } from '@/types/config/provider'
 import type { RequestQueueConfig, TranslationMode } from '@/types/config/translate'
 import type { ArticleContent } from '@/types/content'
-import type { TranslationChunkMetadata } from '@/types/translation-chunk'
+import type {
+  ChunkMetricSampleDTO,
+  ChunkMetricSummaryDTO,
+  TranslationChunkMetadata,
+  TranslationChunkMetrics,
+} from '@/types/translation-chunk'
 import type { QueueOptions } from '@/utils/request/request-queue'
 
 import { browser } from '#imports'
@@ -35,6 +40,17 @@ const TRANSLATION_ONLY_QUEUE_PROFILE: QueueOptions = {
   timeoutMs: 30_000,
   maxRetries: 3,
   baseRetryDelayMs: 400,
+}
+
+function safeHostname(url?: string | null): string | null {
+  if (!url)
+    return null
+  try {
+    return new URL(url).hostname
+  }
+  catch {
+    return null
+  }
 }
 
 let currentTranslateMode: TranslationMode = DEFAULT_CONFIG.translate.mode
@@ -101,7 +117,87 @@ interface GenAIBatchChunkData {
   chunkMetadata?: TranslationChunkMetadata
 }
 
-interface TranslationCacheEntry { translation: string }
+interface TranslationCacheEntry {
+  translation: string
+  chunkMetrics?: TranslationChunkMetrics | null
+}
+
+interface ChunkMetricsParams {
+  metadata?: TranslationChunkMetadata
+  normalizedLength: number
+  scheduleAt: number
+  providerId: string
+  hostname?: string | null
+  mode: TranslationMode
+}
+
+function buildChunkMetrics({ metadata, normalizedLength, scheduleAt, providerId, hostname = null, mode }: ChunkMetricsParams): TranslationChunkMetrics {
+  const completedAt = new Date()
+  const fallbackLength = normalizedLength
+  const startedAt = Number.isFinite(scheduleAt) ? scheduleAt : completedAt.getTime()
+  return {
+    rawChars: metadata?.rawChars ?? fallbackLength,
+    cleanChars: metadata?.cleanChars ?? fallbackLength,
+    strippedMarkup: metadata?.strippedMarkup ?? false,
+    latencyMs: Math.max(0, completedAt.getTime() - startedAt),
+    completedAt: completedAt.toISOString(),
+    providerId,
+    hostname,
+    mode,
+  }
+}
+
+function average(values: number[]): number | undefined {
+  if (!values.length)
+    return undefined
+  const total = values.reduce((sum, value) => sum + value, 0)
+  return Number((total / values.length).toFixed(2))
+}
+
+function percentile(values: number[], target: number): number | undefined {
+  if (!values.length)
+    return undefined
+  const sorted = [...values].sort((a, b) => a - b)
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.floor((target / 100) * (sorted.length - 1))))
+  return Number(sorted[index].toFixed(2))
+}
+
+export function summarizeChunkMetrics(samples: ChunkMetricSampleDTO[]): ChunkMetricSummaryDTO {
+  const latencies = samples.map(sample => sample.latencyMs)
+  const rawCounts = samples.map(sample => sample.rawChars)
+  const cleanCounts = samples.map(sample => sample.cleanChars)
+  const strippedRatio = samples.length
+    ? Number(((samples.filter(sample => sample.strippedMarkup).length / samples.length) * 100).toFixed(1))
+    : undefined
+
+  const providerMap = new Map<string, ChunkMetricSampleDTO[]>()
+  samples.forEach((sample) => {
+    const key = sample.providerId ?? 'unknown'
+    const existing = providerMap.get(key) ?? []
+    existing.push(sample)
+    providerMap.set(key, existing)
+  })
+
+  const providerBreakdown = Array.from(providerMap.entries())
+    .map(([providerId, providerSamples]) => ({
+      providerId,
+      count: providerSamples.length,
+      avgLatencyMs: average(providerSamples.map(sample => sample.latencyMs)),
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+
+  return {
+    total: samples.length,
+    avgLatencyMs: average(latencies),
+    p95LatencyMs: percentile(latencies, 95),
+    avgRawChars: average(rawCounts),
+    avgCleanChars: average(cleanCounts),
+    strippedRatio,
+    providerBreakdown,
+    recentSamples: samples.slice(0, 8),
+  }
+}
 
 const RECOVERABLE_GENAI_RESPONSE_CODES = new Set(['R50004'])
 const RECOVERABLE_GENAI_ERROR_PATTERNS = [
@@ -396,6 +492,7 @@ export async function setUpRequestQueue() {
   onMessage('enqueueTranslateRequest', async (message: any) => {
     const { data: { text, langConfig, providerConfig, scheduleAt, hash, articleTitle, articleTextContent, clientRequestId, chunkMetadata } } = message
     const tabId = message.sender.tab?.id
+    const requestHostname = safeHostname(message.sender.tab?.url)
     const perf = createPerfTimer(`queue:${clientRequestId}`)
     perf.step('queue:received', {
       chars: text.length,
@@ -453,10 +550,19 @@ export async function setUpRequestQueue() {
 
       // Cache the translation result if successful
       if (result && hash) {
+        const chunkMetrics = buildChunkMetrics({
+          metadata: chunkMetadata,
+          normalizedLength: text.length,
+          scheduleAt,
+          providerId: providerConfig.provider,
+          hostname: requestHostname,
+          mode: currentTranslateMode,
+        })
         await db.translationCache.put({
           key: hash,
           translation: result,
           createdAt: new Date(),
+          chunkMetrics,
         })
       }
 
@@ -478,6 +584,7 @@ export async function setUpRequestQueue() {
     const { langConfig, providerConfig, scheduleAt, clientRequestId, articleTitle, articleTextContent } = data
     const chunks: GenAIBatchChunkData[] = data.chunks
     const tabId = message.sender.tab?.id
+    const requestHostname = safeHostname(message.sender.tab?.url)
 
     if (!isGenAIProviderConfig(providerConfig))
       throw new Error('enqueueGenAIBatch requires a GenAI provider config')
@@ -645,10 +752,20 @@ export async function setUpRequestQueue() {
           const hash = chunkHashes[index]
           if (!hash)
             return
+          const sourceChunk = chunks[index]
+          const chunkMetrics = buildChunkMetrics({
+            metadata: sourceChunk?.chunkMetadata,
+            normalizedLength: sourceChunk?.text.length ?? translation.length,
+            scheduleAt,
+            providerId: providerConfig.provider,
+            hostname: requestHostname,
+            mode: currentTranslateMode,
+          })
           await db.translationCache.put({
             key: hash,
             translation,
             createdAt: new Date(),
+            chunkMetrics,
           })
         }))
 

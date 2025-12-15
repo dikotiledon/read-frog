@@ -13,6 +13,7 @@ import { DiscordButton } from './components/discord-button'
 import LanguageOptionsSelector from './components/language-options-selector'
 import { MoreMenu } from './components/more-menu'
 import Hotkey from './components/node-translation-hotkey-selector'
+import { PerfLabCard } from './components/perf-lab-card'
 import ReadButton from './components/read-button'
 import ReadProviderField from './components/read-provider-field'
 import TranslateButton from './components/translate-button'
@@ -20,7 +21,13 @@ import TranslatePromptSelector from './components/translate-prompt-selector'
 import TranslateProviderField from './components/translate-provider-field'
 import TranslationModeSelector from './components/translation-mode-selector'
 
-function App() {
+const PERFLAB_ENABLED = import.meta.env.DEV
+
+interface AppProps {
+  activeTabUrl?: string
+}
+
+function App({ activeTabUrl }: AppProps) {
   const initIsIgnoreTab = useSetAtom(initIsIgnoreTabAtom)
 
   useEffect(() => {
@@ -50,6 +57,7 @@ function App() {
         <AlwaysTranslate />
         <Hotkey />
         <AISmartContext />
+        {PERFLAB_ENABLED ? <PerfLabCard activeUrl={activeTabUrl} /> : null}
       </div>
       <div className="flex items-center justify-between bg-neutral-200 px-2 py-1 dark:bg-neutral-800">
         <button

@@ -1,4 +1,5 @@
 import type { APICallError } from 'ai'
+import type { PreparedChunkText } from '../chunk-normalizer'
 import type { TranslationChunkMetadata } from '@/types/translation-chunk'
 import React from 'react'
 import textSmallCSS from '@/assets/styles/text-small.css?inline'
@@ -67,16 +68,22 @@ export function createSpinnerInside(translatedWrapperNode: HTMLElement): HTMLEle
 
 export async function getTranslatedTextAndRemoveSpinner(
   nodes: ChildNode[],
-  textContent: string,
+  chunkText: PreparedChunkText,
   spinner: HTMLElement,
   translatedWrapperNode: HTMLElement,
   signal?: AbortSignal,
   options?: { chunkMetadata?: TranslationChunkMetadata },
 ): Promise<string | undefined> {
   let translatedText: string | undefined
-  const translationPromise = translateText(textContent, {
+  const translationPromise = translateText(chunkText.rawText, {
     chunkMetadata: options?.chunkMetadata,
     signal,
+    preNormalized: {
+      text: chunkText.normalizedText,
+      stripped: chunkText.strippedMarkup,
+      rawChars: chunkText.rawChars,
+      cleanChars: chunkText.cleanChars,
+    },
   })
 
   const abortPromise = signal

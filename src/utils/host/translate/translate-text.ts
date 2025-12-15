@@ -134,6 +134,12 @@ async function buildHashComponents(
 interface TranslateTextOptions {
   chunkMetadata?: TranslationChunkMetadata
   signal?: AbortSignal
+  preNormalized?: {
+    text: string
+    stripped: boolean
+    rawChars?: number
+    cleanChars?: number
+  }
 }
 
 export async function translateText(text: string, options?: TranslateTextOptions) {
@@ -142,8 +148,11 @@ export async function translateText(text: string, options?: TranslateTextOptions
     throw new Error('No global config when translate text')
   }
   const clientRequestId = crypto.randomUUID()
-  const perf = createPerfTimer(`translate:${clientRequestId}`)
-  perf.step('init', { rawChars: text.length })
+  const perf = createPerfTimer(`translate:${clientRequestId}`, {
+    mode: config.translate.mode,
+  })
+  const rawChars = options?.preNormalized?.rawChars ?? text.length
+  perf.step('init', { rawChars })
   const providerId = config.translate.providerId
   const providerConfig = getProviderConfigById(config.providersConfig, providerId)
 
@@ -162,9 +171,12 @@ export async function translateText(text: string, options?: TranslateTextOptions
     }
   }
 
-  const { text: normalizedText, stripped } = normalizeHtmlForTranslation(text)
+  const normalizedInput = options?.preNormalized ?? normalizeHtmlForTranslation(text)
+  const normalizedText = normalizedInput.text
+  const stripped = normalizedInput.stripped
+  const cleanedChars = options?.preNormalized?.cleanChars ?? normalizedText.length
   perf.step('normalized', {
-    cleanedChars: normalizedText.length,
+    cleanedChars,
     strippedMarkup: stripped,
   })
 
@@ -176,9 +188,9 @@ export async function translateText(text: string, options?: TranslateTextOptions
   const enrichedChunkMetadata = options?.chunkMetadata
     ? {
         ...options.chunkMetadata,
-        rawChars: text.length,
-        cleanChars: normalizedText.length,
-        strippedMarkup: stripped,
+        rawChars: options.chunkMetadata.rawChars ?? rawChars,
+        cleanChars: options.chunkMetadata.cleanChars ?? cleanedChars,
+        strippedMarkup: options.chunkMetadata.strippedMarkup ?? stripped,
       }
     : undefined
 

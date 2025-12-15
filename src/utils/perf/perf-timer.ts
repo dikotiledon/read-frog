@@ -1,4 +1,5 @@
 import { logger } from '@/utils/logger'
+import { recordPerfSample } from '@/utils/perf/perf-recorder'
 
 function now(): number {
   if (typeof performance !== 'undefined' && typeof performance.now === 'function')
@@ -12,10 +13,12 @@ export class PerfTimer {
   private readonly markBase: string
   private lastMarkId?: string
   private measureCount = 0
+  private readonly baseMetadata: Record<string, unknown>
 
-  constructor(private readonly label: string) {
+  constructor(private readonly label: string, metadata?: Record<string, unknown>) {
     this.markBase = `rf-perf:${label}`
     this.lastMarkId = this.recordMark('start')
+    this.baseMetadata = metadata ?? {}
   }
 
   step(stage: string, extra?: Record<string, unknown>) {
@@ -26,13 +29,17 @@ export class PerfTimer {
 
     this.measure(stage)
 
-    logger.info('[Perf]', {
+    const payload = {
+      ...this.baseMetadata,
+      ...(extra ?? {}),
       label: this.label,
       stage,
       deltaMs: Number(delta.toFixed(2)),
       totalMs: Number(total.toFixed(2)),
-      ...extra,
-    })
+    }
+
+    logger.info('[Perf]', payload)
+    recordPerfSample(payload)
   }
 
   private recordMark(stage: string): string | undefined {
@@ -71,6 +78,6 @@ export class PerfTimer {
   }
 }
 
-export function createPerfTimer(label: string): PerfTimer {
-  return new PerfTimer(label)
+export function createPerfTimer(label: string, metadata?: Record<string, unknown>): PerfTimer {
+  return new PerfTimer(label, metadata)
 }

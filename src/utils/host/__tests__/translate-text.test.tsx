@@ -110,6 +110,40 @@ describe('translate-text', () => {
       }))
     })
 
+    it('uses provided pre-normalized text and metadata', async () => {
+      mockGetConfigFromStorage.mockResolvedValueOnce({
+        ...DEFAULT_CONFIG,
+        translate: {
+          ...DEFAULT_CONFIG.translate,
+          providerId: 'microsoft-default',
+        },
+      })
+      mockSendMessage.mockResolvedValue('pre-normalized translation')
+
+      const result = await translateText('<strong>Chunk</strong>', {
+        preNormalized: {
+          text: '**Chunk**',
+          stripped: true,
+          rawChars: 18,
+          cleanChars: 8,
+        },
+        chunkMetadata: {
+          groupId: 'walk',
+          index: 1,
+        },
+      })
+
+      expect(result).toBe('pre-normalized translation')
+      expect(mockSendMessage).toHaveBeenCalledWith('enqueueTranslateRequest', expect.objectContaining({
+        text: '**Chunk**',
+        chunkMetadata: expect.objectContaining({
+          rawChars: 18,
+          cleanChars: 8,
+          strippedMarkup: true,
+        }),
+      }))
+    })
+
     it('forwards abort signal to GenAI batch controller', async () => {
       const mockEnqueue = vi.fn().mockResolvedValue('sig translation')
       const mockController = { enqueue: mockEnqueue, cancelChunk: vi.fn() }

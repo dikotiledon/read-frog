@@ -42,7 +42,9 @@ async function initApp() {
     currentWindow: true,
   })
 
-  const tabId = activeTab[0].id
+  const tab = activeTab[0]
+  const tabId = tab?.id
+  const activeUrl = tab?.url
 
   let isPageTranslated: boolean = false
   if (tabId) {
@@ -69,7 +71,7 @@ async function initApp() {
           >
             <ThemeProvider>
               <TooltipProvider>
-                <App />
+                <App activeTabUrl={activeUrl} />
               </TooltipProvider>
             </ThemeProvider>
           </HydrateAtoms>
